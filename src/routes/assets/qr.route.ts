@@ -9,7 +9,8 @@ export async function handleQrAsset(request: Request, env: Env, token: string): 
   if (!asset) return textResponse("QR expired or not found", 404);
   const qr = await import("qrcode");
   const png = await qr.toBuffer(asset.promptpay_payload, { type: "png", width: 1024, margin: 4, errorCorrectionLevel: "M" });
-  const body = new Blob([png], { type: "image/png" });
+  const body = new ArrayBuffer(png.byteLength);
+  new Uint8Array(body).set(png);
   return new Response(body, {
     status: 200,
     headers: {
