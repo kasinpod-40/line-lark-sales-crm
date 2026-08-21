@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS case_routes (
 CREATE INDEX IF NOT EXISTS idx_case_routes_line_status ON case_routes(line_user_id, status, opened_at DESC);
 CREATE INDEX IF NOT EXISTS idx_case_routes_root ON case_routes(root_message_id);
 CREATE INDEX IF NOT EXISTS idx_case_routes_owner ON case_routes(owner_open_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_case_routes_one_active_line ON case_routes(line_user_id) WHERE status <> 'RESOLVED';
 
 CREATE TABLE IF NOT EXISTS action_dedupe (
   action_key TEXT PRIMARY KEY,
