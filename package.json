@@ -1,12 +1,22 @@
 {
   "name": "line-lark-sales-crm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf .tmp-test && tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('.tmp-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test test/*.test.cjs",
+    "check": "npm run typecheck && npm test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-types": "wrangler types"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.72.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "wrangler": "^4.0.0"
   }
 }
