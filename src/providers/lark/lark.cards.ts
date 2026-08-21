@@ -20,7 +20,7 @@ export function buildCaseCard(input: {
   const resolved = route.status === "RESOLVED";
   const won = route.status === "WON" || resolved && (input.dealAmount ?? 0) > 0;
   const template = resolved ? "grey" : won ? "turquoise" : route.owner_open_id ? "green" : "blue";
-  const title = resolved ? `RESOLVED | ${customerName}` : route.owner_open_id ? `LINE | ${customerName} • ดูแลโดย ${route.owner_name ?? "Sales"}` : `LINE | ${customerName}`;
+  const title = resolved ? `RESOLVED | ${customerName}` : route.status === "WON" ? `WON | ${customerName}` : route.owner_open_id ? `LINE | ${customerName} • ดูแลโดย ${route.owner_name ?? "Sales"}` : `LINE | ${customerName}`;
   const lead = `${ai.hot_lead ? "🔥 Hot Lead" : "Lead"} • 🎯 ${ai.buyer_intent}`;
   const elements: unknown[] = [
     md(`**${lead}**\nAI Intent: **${ai.intent}** • Score: **${Math.round(ai.lead_score)}**\n${ai.ai_summary ? `🤖 ${ai.ai_summary}` : ""}`),
@@ -36,6 +36,9 @@ export function buildCaseCard(input: {
     elements.push(md(`⚡ **First Response:** ${firstResponse === null ? "-" : `${firstResponse} วินาที`}\n⏱ **Resolution:** ${resolution === null ? "-" : `${resolution} วินาที`}\n📊 **Sales Performance:** ${perf ? `฿${formatMoney(perf.closed_won_amount)} / ${perf.closed_won_count} ดีล` : "-"}`));
   } else if (!route.owner_open_id) {
     elements.push(actions([button("🙋‍♂️ รับเคสนี้", { action: "claim_case", case_id: route.case_id }, "primary")]));
+  } else if (route.status === "WON") {
+    elements.push(md("🏆 **Closed Won** — ปิดยอดแล้ว รอปิดเคสเพื่อสรุป SLA / Performance"));
+    elements.push(actions([button("✅ ปิดเคสนี้", { action: "close_case", case_id: route.case_id }, "primary")]));
   } else {
     elements.push(actions([
       button("🎨 ส่งใบเสนอราคา", { action: "open_quote_form", case_id: route.case_id }, "primary"),
