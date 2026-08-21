@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "rm -rf .tmp-test && tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('.tmp-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test test/*.test.cjs",
-    "check": "npm run typecheck && npm test",
+    "bundle": "wrangler deploy --dry-run --config wrangler.ci.jsonc",
+    "check": "npm run typecheck && npm test && npm run bundle",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-types": "wrangler types"
