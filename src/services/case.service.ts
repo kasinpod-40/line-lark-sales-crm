@@ -2,7 +2,7 @@ import type { Env } from "../config/env";
 import type { AIAnalysisResult } from "../ai/ai.types";
 import { analyzeIncomingText } from "../ai/ai.service";
 import { analyzeImage } from "../ai/image-ai.service";
-import type { CaseRoute, CustomerSnapshot } from "../core/models";
+import type { CustomerSnapshot } from "../core/models";
 import { newId, stableUuid } from "../utils/id";
 import { buildCaseCard } from "../providers/lark/lark.cards";
 import { LarkClient } from "../providers/lark/lark.client";
@@ -119,12 +119,16 @@ export class CaseService {
         });
       }
 
+      // Once a customer has a Closed Won history, do not let a later greeting or
+      // low-intent message downgrade the CRM business stage back to New Lead.
+      const lifetimeValue = await this.base.getCustomerLifetimeValue(customerId);
+      const businessStage = lifetimeValue > 0 ? "Active Customer" : ai.customer_stage;
       const customer: CustomerSnapshot = {
         customer_id: customerId,
         line_user_id: event.user_id,
         display_name: customerName,
         picture_url: profile?.pictureUrl,
-        stage: ai.customer_stage,
+        stage: businessStage,
         assigned_sales_id: route.owner_open_id ?? undefined,
         assigned_sales_name: route.owner_name ?? undefined,
         ai,
