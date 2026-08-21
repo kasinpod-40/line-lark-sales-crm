@@ -11,15 +11,13 @@ export interface LineInboundMessage {
   message_type: InboundMessageType;
   text: string;
   customer_name?: string;
-  image_url?: string;
+  picture_url?: string;
+  image_bytes?: ArrayBuffer;
+  image_mime_type?: string;
 }
 
 export interface SalesCaseSignal {
   customer_key: string;
   message: LineInboundMessage;
   ai: AIAnalysisResult;
-}
-
-export interface IncomingMessageProcessor {
-  process(message: LineInboundMessage): Promise<SalesCaseSignal>;
 }
