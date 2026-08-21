@@ -1,5 +1,6 @@
 import type { Env } from "../config/env";
 import type { CampaignDraft, CaseRoute, QuoteDraft } from "../core/models";
+import { buildDirectCloseQuote } from "../core/deal";
 import { buildPromptPayPayload } from "../core/promptpay";
 import { parseQuoteForm } from "../core/quote";
 import { analyzeByRules } from "../ai/rule-engine";
@@ -160,7 +161,6 @@ export class CardActionService {
           const draft = await this.operational.getDraft<QuoteDraft>(draftId);
           if (!draft || draft.kind !== "quote" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("ใบเสนอราคานี้หมดอายุหรือไม่ถูกต้อง");
           const dealId = `deal:${draft.draft_id}`;
-          // Persist the quotation snapshot BEFORE outbound LINE delivery.
           const dealRecordId = await this.base.saveQuote({ dealId, route, quote: draft.payload, quotationStatus: "Pending Send" });
           await this.operational.setDealRecord(route.case_id, dealRecordId);
           await pushLineMessages(this.env, route.line_user_id, [quotationFlex(companyName(this.env), await this.customerName(route), draft.payload)], await stableUuid(`quote:${draft.draft_id}`));
@@ -233,7 +233,7 @@ export class CardActionService {
           this.requireOwner(route, event.operatorOpenId);
           const latest = await this.base.getLatestDealForCase(route.case_id);
           const amount = latest?.deal.payment_amount || latest?.deal.total_amount || 0;
-          if (!(amount > 0)) throw new Error("ยังไม่มียอด Deal สำหรับปิดการขาย");
+          if (!(amount > 0)) throw new Error("ยังไม่มียอด Deal สำหรับปิดการขาย — ใช้คำสั่งใน Thread เช่น ‘ปิดยอด 45000’ เพื่อระบุยอดแบบ Manual");
           const draftId = newId("draft");
           await this.operational.createDraft<CloseDealDraft>({ draft_id: draftId, kind: "close_deal", case_id: route.case_id, created_by: event.operatorOpenId, payload: { amount } });
           await this.lark.replyCard(root, buildCloseDealConfirmCard(route.case_id, draftId, amount));
@@ -245,8 +245,21 @@ export class CardActionService {
           const draftId = asString(event.value.draft_id);
           const draft = await this.operational.getDraft<CloseDealDraft>(draftId);
           if (!draft || draft.kind !== "close_deal" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("Close Deal draft หมดอายุหรือไม่ถูกต้อง");
-          const latest = await this.base.getLatestDealForCase(route.case_id);
-          if (!latest) throw new Error("ไม่พบ Sales_Deals สำหรับปิดยอด");
+
+          let latest = await this.base.getLatestDealForCase(route.case_id);
+          if (!latest) {
+            const directQuote = buildDirectCloseQuote(draft.payload.amount, `DIRECT-${route.case_id}`);
+            const directRecordId = await this.base.saveQuote({
+              dealId: `deal:direct:${draft.draft_id}`,
+              route,
+              quote: directQuote,
+              quotationStatus: "Not Required",
+            });
+            await this.operational.setDealRecord(route.case_id, directRecordId);
+            latest = await this.base.getLatestDealForCase(route.case_id);
+          }
+          if (!latest) throw new Error("ไม่สามารถสร้าง Sales_Deals สำหรับปิดยอดได้");
+
           await this.base.closeDeal(latest.recordId, draft.payload.amount);
           const lifetime = await this.base.getCustomerLifetimeValue(route.customer_id);
           await this.base.markCustomerActive(route.customer_id, lifetime);
