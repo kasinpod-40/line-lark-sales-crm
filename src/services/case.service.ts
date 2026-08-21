@@ -100,27 +100,33 @@ export class CaseService {
       }
 
       const customerId = `line:${event.user_id}`;
+      const inboundSnapshot = {
+        latest_line_message_id: event.message.id,
+        latest_message_text: messageText(event, ai),
+        latest_intent: ai.intent,
+      };
       let route = await this.operational.findActiveCaseByLineUserId(event.user_id);
       if (!route) {
-        route = await this.operational.createCase({
-          case_id: newId("case"),
-          line_user_id: event.user_id,
-          customer_id: customerId,
-          opened_at: event.occurred_at || Date.now(),
-          latest_line_message_id: event.message.id,
-          latest_message_text: messageText(event, ai),
-          latest_intent: ai.intent,
-        });
+        try {
+          route = await this.operational.createCase({
+            case_id: newId("case"),
+            line_user_id: event.user_id,
+            customer_id: customerId,
+            opened_at: event.occurred_at || Date.now(),
+            ...inboundSnapshot,
+          });
+        } catch (error) {
+          // A second Queue consumer can race here. The partial unique index on
+          // active line_user_id is authoritative; if another consumer won,
+          // attach this message to that same case instead of creating a duplicate.
+          const concurrent = await this.operational.findActiveCaseByLineUserId(event.user_id);
+          if (!concurrent) throw error;
+          route = await this.operational.updateInbound(concurrent.case_id, inboundSnapshot);
+        }
       } else {
-        route = await this.operational.updateInbound(route.case_id, {
-          latest_line_message_id: event.message.id,
-          latest_message_text: messageText(event, ai),
-          latest_intent: ai.intent,
-        });
+        route = await this.operational.updateInbound(route.case_id, inboundSnapshot);
       }
 
-      // Once a customer has a Closed Won history, do not let a later greeting or
-      // low-intent message downgrade the CRM business stage back to New Lead.
       const lifetimeValue = await this.base.getCustomerLifetimeValue(customerId);
       const businessStage = lifetimeValue > 0 ? "Active Customer" : ai.customer_stage;
       const customer: CustomerSnapshot = {
