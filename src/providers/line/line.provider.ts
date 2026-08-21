@@ -97,6 +97,12 @@ async function linePost(env: Env, path: string, body: unknown, retryKey?: string
   };
   if (retryKey) headers["X-Line-Retry-Key"] = retryKey;
   const response = await fetch(`https://api.line.me${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+
+  // When a retry key was already accepted, LINE returns 409. That means the
+  // original request was accepted and must be treated as terminal success;
+  // retrying again would never advance our local state.
+  if (response.status === 409 && retryKey) return;
+
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`LINE API ${path} failed: ${response.status} ${text.slice(0, 800)}`);
