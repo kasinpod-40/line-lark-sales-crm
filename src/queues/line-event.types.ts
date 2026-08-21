@@ -1,3 +1,5 @@
+import type { QueueBatch, QueueMessage, QueueProducer } from "../platform/cloudflare";
+
 export type LineSourceType = "user" | "group" | "room";
 export type LineQueueMessageType = "text" | "image" | "sticker";
 
@@ -23,6 +25,6 @@ export interface LineEventQueueMessage {
   };
 }
 
-export interface QueueProducerBinding<T> {
-  send(body: T, options?: { contentType?: "json" | "text" | "bytes" | "v8"; delaySeconds?: number }): Promise<void>;
-}
+export type QueueProducerBinding<T> = QueueProducer<T>;
+export type QueueMessageLike<T> = QueueMessage<T>;
+export type QueueBatchLike<T> = QueueBatch<T>;
