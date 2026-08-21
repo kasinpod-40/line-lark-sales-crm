@@ -20,7 +20,7 @@ import { getLineUserProfile, multicastLineMessages, pushLineMessages, type LineI
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
 import { asNumber, asString, type UnknownRecord } from "../utils/json";
-import { newId, stableUuid, uuid } from "../utils/id";
+import { newId, stableUuid } from "../utils/id";
 import { parseMoney } from "../utils/money";
 
 export interface CardActionEvent {
@@ -202,7 +202,9 @@ export class CardActionService {
           if (!draft || draft.kind !== "payment" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("QR draft หมดอายุหรือไม่ถูกต้อง");
           const targetType = this.env.PROMPTPAY_TARGET_TYPE ?? "phone";
           const payload = buildPromptPayPayload(this.env.PROMPTPAY_TARGET, draft.payload.amount, targetType);
-          const token = uuid();
+          // Retry-key semantics require the retried request body to be identical.
+          // A deterministic asset token keeps the QR URL stable across retries.
+          const token = await stableUuid(`qr-asset:${draft.draft_id}`);
           const ttlSeconds = Math.max(3600, asNumber(this.env.QR_TTL_SECONDS, 604800));
           const now = Date.now();
           await this.operational.createQrAsset({
