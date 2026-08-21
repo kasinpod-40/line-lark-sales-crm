@@ -78,6 +78,7 @@ export class CardActionService {
   }
 
   private requireOwner(route: CaseRoute, openId: string): void {
+    if (route.status === "RESOLVED") throw new Error("เคสนี้ปิดแล้ว ไม่สามารถใช้ action เก่าได้");
     if (!route.owner_open_id) throw new Error("กรุณารับเคสก่อนทำรายการ");
     if (route.owner_open_id !== openId) throw new Error(`เคสนี้ถูกดูแลโดย ${route.owner_name ?? "Sales คนอื่น"}`);
   }
@@ -115,7 +116,16 @@ export class CardActionService {
     try {
       if (event.action === "cancel_draft") {
         const draftId = asString(event.value.draft_id);
-        if (draftId) await this.operational.finishDraft(draftId, "CANCELLED");
+        const draft = draftId ? await this.operational.getDraft<unknown>(draftId) : null;
+        if (!draft) {
+          await this.operational.completeAction(actionKey);
+          return;
+        }
+        route = await this.operational.getCase(draft.case_id);
+        if (!route) throw new Error("ไม่พบเคสของ draft นี้");
+        this.requireOwner(route, event.operatorOpenId);
+        if (draft.created_by !== event.operatorOpenId) throw new Error("คุณไม่ใช่ผู้สร้างรายการนี้");
+        await this.operational.finishDraft(draftId, "CANCELLED");
         await this.operational.completeAction(actionKey);
         return;
       }
@@ -202,8 +212,6 @@ export class CardActionService {
           if (!draft || draft.kind !== "payment" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("QR draft หมดอายุหรือไม่ถูกต้อง");
           const targetType = this.env.PROMPTPAY_TARGET_TYPE ?? "phone";
           const payload = buildPromptPayPayload(this.env.PROMPTPAY_TARGET, draft.payload.amount, targetType);
-          // Retry-key semantics require the retried request body to be identical.
-          // A deterministic asset token keeps the QR URL stable across retries.
           const token = await stableUuid(`qr-asset:${draft.draft_id}`);
           const ttlSeconds = Math.max(3600, asNumber(this.env.QR_TTL_SECONDS, 604800));
           const now = Date.now();
