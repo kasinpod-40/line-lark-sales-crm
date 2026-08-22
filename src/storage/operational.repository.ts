@@ -1,6 +1,6 @@
 import type { Env } from "../config/env";
 import type { CampaignDraft, CaseRoute } from "../core/models";
-import { asNumber, asString, isRecord, type UnknownRecord } from "../utils/json";
+import { asNumber, asString, type UnknownRecord } from "../utils/json";
 
 export type DraftKind = "quote" | "payment" | "close_deal" | "campaign";
 
@@ -25,6 +25,27 @@ export interface QrAsset {
   promptpay_payload: string;
   created_at: number;
   expires_at: number;
+}
+
+export interface MediaAsset {
+  token: string;
+  object_key: string;
+  case_id: string;
+  source_message_id: string;
+  media_kind: "image" | "file" | "audio";
+  mime_type: string;
+  file_name: string;
+  size_bytes: number;
+  created_at: number;
+  expires_at: number;
+}
+
+export interface CampaignBatchState {
+  state: string;
+  retry_key: string;
+  fallback_count: number;
+  failed_count: number;
+  last_error: string | null;
 }
 
 function nullableString(value: unknown): string | null {
@@ -256,10 +277,53 @@ export class OperationalRepository {
     };
   }
 
-  async getCampaignBatch(draftId: string, batchIndex: number): Promise<{ state: string; retry_key: string } | null> {
-    const row = await this.env.DB.prepare("SELECT state,retry_key FROM campaign_batches WHERE draft_id=? AND batch_index=? LIMIT 1")
+  async createMediaAsset(input: MediaAsset): Promise<void> {
+    await this.env.DB.prepare(
+      "INSERT OR REPLACE INTO media_assets (token,object_key,case_id,source_message_id,media_kind,mime_type,file_name,size_bytes,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+    ).bind(
+      input.token,
+      input.object_key,
+      input.case_id,
+      input.source_message_id,
+      input.media_kind,
+      input.mime_type,
+      input.file_name,
+      input.size_bytes,
+      input.created_at,
+      input.expires_at,
+    ).run();
+  }
+
+  async getMediaAsset(token: string): Promise<MediaAsset | null> {
+    const row = await this.env.DB.prepare("SELECT * FROM media_assets WHERE token=? AND expires_at>? LIMIT 1")
+      .bind(token, Date.now()).first<UnknownRecord>();
+    if (!row) return null;
+    const kind = asString(row.media_kind);
+    if (!["image", "file", "audio"].includes(kind)) return null;
+    return {
+      token: asString(row.token),
+      object_key: asString(row.object_key),
+      case_id: asString(row.case_id),
+      source_message_id: asString(row.source_message_id),
+      media_kind: kind as MediaAsset["media_kind"],
+      mime_type: asString(row.mime_type, "application/octet-stream"),
+      file_name: asString(row.file_name, "download"),
+      size_bytes: asNumber(row.size_bytes),
+      created_at: asNumber(row.created_at),
+      expires_at: asNumber(row.expires_at),
+    };
+  }
+
+  async getCampaignBatch(draftId: string, batchIndex: number): Promise<CampaignBatchState | null> {
+    const row = await this.env.DB.prepare("SELECT state,retry_key,fallback_count,failed_count,last_error FROM campaign_batches WHERE draft_id=? AND batch_index=? LIMIT 1")
       .bind(draftId, batchIndex).first<UnknownRecord>();
-    return row ? { state: asString(row.state), retry_key: asString(row.retry_key) } : null;
+    return row ? {
+      state: asString(row.state),
+      retry_key: asString(row.retry_key),
+      fallback_count: asNumber(row.fallback_count),
+      failed_count: asNumber(row.failed_count),
+      last_error: nullableString(row.last_error),
+    } : null;
   }
 
   async ensureCampaignBatch(draftId: string, batchIndex: number, retryKey: string, targetCount: number): Promise<void> {
@@ -268,9 +332,26 @@ export class OperationalRepository {
     ).bind(draftId, batchIndex, retryKey, targetCount, Date.now()).run();
   }
 
+  async markCampaignBatchResult(
+    draftId: string,
+    batchIndex: number,
+    input: { state: "SENT" | "PARTIAL" | "FAILED"; fallbackCount?: number; failedCount?: number; error?: string },
+  ): Promise<void> {
+    await this.env.DB.prepare(
+      "UPDATE campaign_batches SET state=?, fallback_count=?, failed_count=?, last_error=?, updated_at=? WHERE draft_id=? AND batch_index=?"
+    ).bind(
+      input.state,
+      input.fallbackCount ?? 0,
+      input.failedCount ?? 0,
+      input.error?.slice(0, 1000) ?? null,
+      Date.now(),
+      draftId,
+      batchIndex,
+    ).run();
+  }
+
   async markCampaignBatchSent(draftId: string, batchIndex: number): Promise<void> {
-    await this.env.DB.prepare("UPDATE campaign_batches SET state='SENT', updated_at=? WHERE draft_id=? AND batch_index=?")
-      .bind(Date.now(), draftId, batchIndex).run();
+    await this.markCampaignBatchResult(draftId, batchIndex, { state: "SENT" });
   }
 
   static campaignPayload(campaign: CampaignDraft, recipients: string[]): { campaign: CampaignDraft; recipients: string[] } {
