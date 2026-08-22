@@ -11,14 +11,14 @@ function validEnv() {
     DB: {},
     MEDIA_BUCKET: {},
     AI: { run: async () => ({}) },
-    LARK_APP_ID: 'cli_xxx',
+    LARK_APP_ID: 'cli_a1b2c3d4',
     LARK_APP_SECRET: 'lark-secret',
     LARK_VERIFICATION_TOKEN: 'verify-token',
-    LARK_SALES_INBOX_CHAT_ID: 'oc_xxx',
-    LARK_BASE_APP_TOKEN: 'bascn_xxx',
-    LARK_BASE_CUSTOMERS_TABLE_ID: 'tbl_customers',
-    LARK_BASE_CHAT_TRACKING_TABLE_ID: 'tbl_tracking',
-    LARK_BASE_SALES_DEALS_TABLE_ID: 'tbl_deals',
+    LARK_SALES_INBOX_CHAT_ID: 'oc_a1b2c3d4',
+    LARK_BASE_APP_TOKEN: 'bascn_a1b2c3d4',
+    LARK_BASE_CUSTOMERS_TABLE_ID: 'tbl_customers_123',
+    LARK_BASE_CHAT_TRACKING_TABLE_ID: 'tbl_tracking_123',
+    LARK_BASE_SALES_DEALS_TABLE_ID: 'tbl_deals_123',
     PROMPTPAY_TARGET: '0812345678',
     PROMPTPAY_TARGET_TYPE: 'phone',
     PUBLIC_BASE_URL: 'https://crm.example.com',
@@ -51,6 +51,16 @@ test('invalid public URL and reversed VIP thresholds fail readiness', () => {
   assert.equal(result.ready, false);
   assert.ok(result.errors.some((issue) => issue.code === 'INVALID_PUBLIC_BASE_URL'));
   assert.ok(result.errors.some((issue) => issue.code === 'INVALID_VIP_THRESHOLD_ORDER'));
+});
+
+test('placeholder IDs and invalid PromptPay target fail readiness before E2E', () => {
+  const env = validEnv();
+  env.LARK_SALES_INBOX_CHAT_ID = 'oc_xxx';
+  env.PROMPTPAY_TARGET = '12345';
+  const result = validateDeploymentConfig(env);
+  assert.equal(result.ready, false);
+  assert.ok(result.errors.some((issue) => issue.code === 'PLACEHOLDER_CONFIG_VALUE'));
+  assert.ok(result.errors.some((issue) => issue.code === 'INVALID_PROMPTPAY_TARGET'));
 });
 
 test('optional AI and VIP thresholds warn without blocking deployment', () => {
