@@ -60,11 +60,16 @@ function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
   const action = isRecord(event.action) ? event.action : isRecord(body.action) ? body.action : {};
   const operator = isRecord(event.operator) ? event.operator : {};
   const operatorId = isRecord(operator.operator_id) ? operator.operator_id : {};
-  const value = objectValue(action.value);
+
+  // Card 2.0 callback behavior values are surfaced as the button action value.
+  // Some delivery adapters expose the same value as a JSON string in
+  // action_value, so support both representations without weakening validation.
+  const value = objectValue(action.value ?? action.action_value ?? event.action_value);
   const formValue = objectValue(action.form_value ?? event.form_value);
   const actionName = asString(value.action) || asString(action.name) || asString(action.tag);
   const openId = asString(operatorId.open_id) || asString(operator.open_id);
   if (!actionName || !openId) return null;
+
   return {
     eventId: asString(body.header.event_id) || crypto.randomUUID(),
     operatorOpenId: openId,
@@ -102,6 +107,7 @@ export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerE
   if (eventType === "card.action.trigger" || isRecord(body.event) && isRecord(body.event.action)) {
     const event = parseActionEvent(body);
     if (event) ctx.waitUntil(new CardActionService(env).handle(event).catch((error) => console.error("LARK_CARD_ACTION_FAILED", error)));
+    // Acknowledge immediately; Base/LINE mutations continue asynchronously.
     return jsonResponse({ toast: { type: "info", content: "กำลังดำเนินการ..." } });
   }
   return jsonResponse({ code: 0 });
