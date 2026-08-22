@@ -8,6 +8,8 @@
     "test": "rm -rf .tmp-test && tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('.tmp-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test test/*.test.cjs",
     "bundle": "wrangler deploy --dry-run --config wrangler.ci.jsonc",
     "check": "npm run typecheck && npm test && npm run bundle",
+    "lark:base:plan": "node scripts/provision-lark-base.mjs",
+    "lark:base:apply": "node scripts/provision-lark-base.mjs --apply",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-types": "wrangler types"
