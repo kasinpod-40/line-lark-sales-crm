@@ -4,13 +4,26 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / REUSABLE RELEASE CONTRACT ADDED / EXACT CODE HEAD CI VERIFIED / WAITING ONLY FOR THE SINGLE FINAL-STACK CONTROLLED E2E.**
+**PRODUCT CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / REUSABLE RELEASE CONTRACT ADDED / EXACT CODE HEAD CI VERIFIED / WAITING ONLY FOR THE GOLDEN-STACK CONTROLLED E2E.**
 
-There is **no DEV, UAT, STAGING, or PROD environment ladder** for our golden implementation. Local work and GitHub CI are verification gates only. We will provision our real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it as the product's golden/reference stack.
+There is no DEV/UAT/STAGING/PROD ladder for our product build. Local work and GitHub CI are verification gates only.
 
-The commercial model is locked: every sold customer receives a fresh installation of the **same verified product release** in customer-specific LINE/Lark/Cloudflare resources. We change configuration/secrets/resource IDs, not business logic. Per-customer forks are not the default architecture.
+## Concrete golden-stack target — LOCKED
 
-Read:
+The first complete reference installation will be built in the owner's **personal Lark workspace / personal Lark Base** so product completion is not blocked by customer/PM approval for creating or changing a Lark app.
+
+This personal Lark installation is **not a temporary DEV or UAT environment**. It is our canonical golden/reference stack used to finish the product, run the full controlled E2E, demonstrate behavior, and retain as the installation reference.
+
+Rules:
+- create exactly one golden Lark Base in the personal workspace
+- create/use a Lark App/Bot that the owner can control without customer-side approval dependency
+- use our own test/reference LINE OA and Cloudflare resources for this golden stack
+- do not put real customer production credentials or real customer business data into the golden stack
+- do not later "promote" or copy this Base into a customer tenant as an environment migration
+- when a customer buys the product, create a fresh customer-owned/customer-controlled installation from the same verified release, schema, migrations, manifest, and setup checklist
+- customer installation changes configuration/secrets/resource IDs, not the reusable business logic
+
+See:
 - `docs/single-stack-delivery.md`
 - `docs/customer-deployment-model.md`
 - `deploy/product-manifest.json`
@@ -47,15 +60,17 @@ GitHub CI:
 - unit/contract tests: **36/36 PASS**
 - Wrangler deploy dry-run bundle: SUCCESS
 
-Documentation-only commits may follow this checkpoint. If any source/config/test/migration code changes after this SHA, exact code HEAD CI must pass again before external setup.
+The later branch checkpoint `32ff3e7dbf9471e0e3f2baca8f85b6aec22a9012` was also verified by CI run `32549938247` / run #107 with SUCCESS. Changes after the code-bearing checkpoint are documentation/release-rule changes unless a later source/config/test/migration diff proves otherwise.
+
+Any future source/config/test/migration change requires exact code HEAD CI again before runtime changes.
 
 ## Implemented code coverage
 
 - LINE HMAC webhook verification, direct-user identity and Queue normalization
 - D1 event/action idempotency, one active case per LINE user and atomic Case Claim
 - LINE profile resolution and customer sync
-- AI/rule classification including purchase/price/support/demo/general intent presentation, lead quality and actionable guidance
-- Lark Case Card lifecycle with Schema 2.0, blue/green/grey state and multi-device update config
+- AI/rule classification including purchase/price/support/demo/general intent, lead quality and actionable guidance
+- Lark Card Schema 2.0 lifecycle with blue/green/grey state and multi-device updates
 - one central Sales Inbox + one root Case Card + one Thread per case
 - collaborative Thread replies while preserving one Case Owner for KPI/deal attribution
 - strict root-chat isolation with visible orange warning; root messages never bridge to LINE
@@ -64,25 +79,15 @@ Documentation-only commits may follow this checkpoint. If any source/config/test
 - R2 expiring media assets and D1 media metadata
 - manual Quote → Preview/Confirm → persisted `Sales_Deals` snapshot → LINE Flex
 - persisted amount → QR Preview/Confirm → PromptPay PNG → LINE
-- Smart Close command variants including `ปิดยอด 45000`, `ยอดเงิน 150000` and context-gated bare amount confirmation
+- Smart Close variants including `ปิดยอด 45000`, `ยอดเงิน 150000` and context-gated bare amount confirmation
 - Closed Won → Payment Confirmation → Customer `🏆 Active Customer`
 - configurable Gold/Diamond VIP thresholds; preserve current status when thresholds are unset
 - First Response SLA with <=5-minute Fast label; Resolution tracked separately
 - Sales cumulative Closed Won amount/count on the same resolved root Card
-- VIP/retarget/broadcast command flow with Preview/Confirm, strict LINE user-ID filtering, Queue dispatch, <=500 multicast batches, retry-key state and safe individual fallback
+- VIP/retarget/broadcast flow with Preview/Confirm, strict LINE user-ID filtering, Queue dispatch, <=500 multicast batches, retry-key state and safe individual fallback
 - callback work detached from the immediate Lark response using Worker `waitUntil()` where applicable
-
-## Reusable deployment hardening completed
-
-- product version aligned to `0.3.0`
-- machine-readable `deploy/product-manifest.json` added
-- manifest locks the three-table contract, D1 migration order, required bindings, secrets/vars and callback paths
-- runtime deployment validator added
-- `/health` returns HTTP `200` only when blocking installation configuration is ready
-- incomplete/malformed installation returns HTTP `503` with safe issue codes/messages and no secret values
-- validator rejects missing required config/bindings, obvious placeholder IDs, invalid HTTPS public URL, PromptPay target/type mismatch, invalid VAT/TTL and invalid VIP threshold ordering
-- Workers AI and VIP thresholds remain optional warnings because the product has deterministic/safe fallback behavior
-- tests lock manifest contents and credential-free contract
+- deployment validator + safe `/health` readiness gate
+- machine-readable reusable installation contract at `deploy/product-manifest.json`
 
 ## Architecture lock
 
@@ -97,23 +102,6 @@ Cloudflare-native reliability is authoritative where it provides the required SR
 - Worker observability instead of durable local `logs/*.log`
 - HTTPS Worker ingress instead of adding NGINX solely to match a diagram
 
-## Reusable product / golden-stack lock
-
-Our own completed installation is the canonical **golden/reference stack**, not a disposable DEV environment.
-
-For each sold customer:
-- use the same verified release/SHA + matching `deploy/product-manifest.json`
-- create the same 3-table Base contract
-- apply the same D1 migrations in manifest order
-- use the same Card/Thread/Quote/QR/Deal/SLA/Broadcast logic
-- provide customer-specific LINE/Lark/PromptPay/Cloudflare configuration through secrets, vars and bindings
-- never hard-code customer credentials, Base/table IDs, chat IDs or resource IDs in source
-- avoid per-customer code forks; reusable variations should be configuration/features in the main product where feasible
-- require `/health` ready before enabling callbacks
-- run the same controlled E2E on the customer's final installation before handoff
-
-Our golden stack must not contain real customer credentials/data merely to serve as a deployment template.
-
 ## Lark Base lock
 
 Exactly three business tables:
@@ -127,20 +115,22 @@ All field/API contracts use lower `snake_case`.
 
 Use `docs/lark-base-schema.md` as the final Base creation contract.
 
-## Only remaining work — external runtime
+## Next work — personal golden stack
 
-No intentional code feature backlog remains for the accepted PM + SRS scope.
+No intentional feature backlog remains for the accepted PM + SRS scope.
 
 Next:
-1. Create our real final Lark Base once from `docs/lark-base-schema.md`.
-2. Provision our final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
-3. Apply D1 migrations exactly in `deploy/product-manifest.json` order.
-4. Configure final LINE/Lark credentials, table IDs, PromptPay target, bindings and public Worker URL.
-5. Require `/health` HTTP 200 with `configuration.ready=true`.
-6. Enable Lark callbacks and LINE webhook only after readiness is green.
-7. Execute `docs/setup.md` controlled E2E directly on this final golden stack.
-8. If any mismatch appears, fix only the root cause, pass CI, then rerun the affected flow on the same stack.
-9. When all acceptance steps pass, mark the same stack `live-ready` and `reusable-ready`; there is no environment promotion or data migration afterward.
+1. Create the golden Lark Base in the owner's personal Lark workspace from `docs/lark-base-schema.md`.
+2. Create/configure the owner-controlled Lark App/Bot and Sales Inbox for the golden stack.
+3. Provision our golden Worker, D1, R2, Queue/DLQ and optional Workers AI binding once.
+4. Apply D1 migrations exactly in `deploy/product-manifest.json` order.
+5. Configure golden LINE/Lark credentials, table IDs, PromptPay target, bindings and public Worker URL.
+6. Require `/health` HTTP 200 with `configuration.ready=true`.
+7. Enable Lark callbacks and LINE webhook only after readiness is green.
+8. Execute `docs/setup.md` controlled E2E directly on this golden stack.
+9. If any mismatch appears, fix only the root cause, pass CI for code changes, then rerun the affected flow on the same stack.
+10. When all acceptance steps pass, mark the golden stack `live-ready` and `reusable-ready`.
+11. Customer sales then use the same verified release blueprint to create a fresh customer installation without waiting for product development work to restart.
 
 ## Handoff read order
 
@@ -157,4 +147,4 @@ Next:
 11. `docs/setup.md`
 12. current PR #1 exact HEAD + CI evidence
 
-Never describe the SRS as a later scope expansion. Never describe our delivery as DEV → UAT → PROD. Never treat a customer installation as a reason to fork the core business logic.
+Never describe the SRS as a later scope expansion. Never describe our product build as DEV → UAT → PROD. Never treat a customer installation as a reason to fork the core business logic. The personal Lark workspace is the golden/reference target for product completion, not a disposable lower environment.
