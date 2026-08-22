@@ -50,9 +50,12 @@ function resolveFieldId(fieldIdsByName, fieldName) {
 }
 
 export function readbackDesiredForViewProperty(property, desired, fieldIdsByName) {
+  // Current Lark Base visible_fields readback resolves persisted field references
+  // back to canonical field names. Keep names here instead of converting them to IDs.
+  // Group/sort readbacks still use field IDs in current CLI/API responses.
   if (property === "visible_fields") {
     return {
-      visible_fields: (desired.visible_fields || []).map((fieldName) => resolveFieldId(fieldIdsByName, fieldName)),
+      visible_fields: [...(desired.visible_fields || [])],
     };
   }
   if (property === "group") {
