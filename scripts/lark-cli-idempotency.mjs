@@ -32,13 +32,13 @@ function collectValues(value, out = []) {
 }
 
 export function viewPropertyMatches(payload, expected) {
+  const unwrapValue = expected && typeof expected === "object" && !Array.isArray(expected) && Object.keys(expected).length === 1
+    ? expected[Object.keys(expected)[0]]
+    : undefined;
+
   for (const candidate of collectValues(payload)) {
     if (deepContains(candidate, expected)) return true;
-    if (expected && typeof expected === "object" && !Array.isArray(expected)) {
-      for (const value of Object.values(expected)) {
-        if (deepContains(candidate, value)) return true;
-      }
-    }
+    if (unwrapValue !== undefined && deepContains(candidate, unwrapValue)) return true;
   }
   return false;
 }
