@@ -128,11 +128,11 @@ function blockMap(payload) {
 function listTables(baseToken) {
   return tableMap(runLark(["base", "+table-list", "--base-token", baseToken], "List Base tables"));
 }
-function listFields(baseToken, table) {
-  return fieldMap(runLark(["base", "+field-list", "--base-token", baseToken, "--table-id", table], `List fields ${table}`));
+function listFields(baseToken, tableRef, label = tableRef) {
+  return fieldMap(runLark(["base", "+field-list", "--base-token", baseToken, "--table-id", tableRef], `List fields ${label}`));
 }
-function listViews(baseToken, table) {
-  return viewMap(runLark(["base", "+view-list", "--base-token", baseToken, "--table-id", table, "--limit", "200"], `List views ${table}`));
+function listViews(baseToken, tableRef, label = tableRef) {
+  return viewMap(runLark(["base", "+view-list", "--base-token", baseToken, "--table-id", tableRef, "--limit", "200"], `List views ${label}`));
 }
 function listDashboards(baseToken) {
   return dashboardMap(runLark(["base", "+dashboard-list", "--base-token", baseToken, "--page-size", "100"], "List dashboards"));
@@ -141,13 +141,20 @@ function listDashboardBlocks(baseToken, dashboardId) {
   return blockMap(runLark(["base", "+dashboard-block-list", "--base-token", baseToken, "--dashboard-id", dashboardId, "--page-size", "100"], `List dashboard blocks ${dashboardId}`));
 }
 
+function requireResourceId(map, name, label) {
+  const meta = map.get(name);
+  const id = meta?.id;
+  if (typeof id !== "string" || !id.trim()) throw new Error(`${label} ${name} exists but current Lark CLI returned no concrete id`);
+  return id.trim();
+}
+
 function waitForNamedResource(readMap, name, label) {
   const result = verifyEventually({
     read: readMap,
-    matches: (map) => map.has(name),
+    matches: (map) => map.has(name) && Boolean(map.get(name)?.id),
     sleep: sleepMs,
   });
-  if (!result.ok) throw new Error(`${label} did not become visible after ${result.attempts} eventual-consistency reads`);
+  if (!result.ok) throw new Error(`${label} did not become visible with a concrete id after ${result.attempts} eventual-consistency reads`);
   return result.last.get(name);
 }
 
@@ -190,21 +197,23 @@ function verifySchema(baseToken) {
     throw new Error(`UX apply requires exact three-table Base; missing=[${missingTables.join(", ")}], unexpected=[${unexpectedTables.join(", ")}]`);
   }
   for (const tableName of expectedTables) {
-    const actual = listFields(baseToken, tableName);
+    const tableId = requireResourceId(tables, tableName, "Table");
+    const actual = listFields(baseToken, tableId, tableName);
     const expected = expectedFieldNames(tableName);
     const missing = [...expected].filter((name) => !actual.has(name));
     if (missing.length) throw new Error(`UX apply requires completed schema; ${tableName} missing fields: ${missing.join(", ")}`);
   }
+  return tables;
 }
 
-function createView(baseToken, table, view) {
-  runLark(["base", "+view-create", "--base-token", baseToken, "--table-id", table, "--json", JSON.stringify({ name: view.name, type: view.type })], `Create view ${table}.${view.name}`);
-  return waitForNamedResource(() => listViews(baseToken, table), view.name, `Created view ${table}.${view.name}`);
+function createView(baseToken, tableId, tableName, view) {
+  runLark(["base", "+view-create", "--base-token", baseToken, "--table-id", tableId, "--json", JSON.stringify({ name: view.name, type: view.type })], `Create view ${tableName}.${view.name}`);
+  return waitForNamedResource(() => listViews(baseToken, tableId, tableName), view.name, `Created view ${tableName}.${view.name}`);
 }
 
-function renameView(baseToken, table, from, to) {
-  runLark(["base", "+view-rename", "--base-token", baseToken, "--table-id", table, "--view-id", from, "--name", to], `Rename view ${table}.${from}`);
-  return waitForNamedResource(() => listViews(baseToken, table), to, `Renamed view ${table}.${to}`);
+function renameView(baseToken, tableId, tableName, fromId, fromName, toName) {
+  runLark(["base", "+view-rename", "--base-token", baseToken, "--table-id", tableId, "--view-id", fromId, "--name", toName], `Rename view ${tableName}.${fromName}`);
+  return waitForNamedResource(() => listViews(baseToken, tableId, tableName), toName, `Renamed view ${tableName}.${toName}`);
 }
 
 const viewPropertyCommands = {
@@ -214,18 +223,18 @@ const viewPropertyCommands = {
   sort: { get: "+view-get-sort", set: "+view-set-sort" },
 };
 
-function getViewProperty(baseToken, table, viewName, property) {
+function getViewProperty(baseToken, tableId, tableName, viewId, viewName, property) {
   const command = viewPropertyCommands[property]?.get;
   if (!command) throw new Error(`Unsupported view property read: ${property}`);
   return runLark([
     "base", command,
     "--base-token", baseToken,
-    "--table-id", table,
-    "--view-id", viewName,
-  ], `Read ${property} ${table}.${viewName}`);
+    "--table-id", tableId,
+    "--view-id", viewId,
+  ], `Read ${property} ${tableName}.${viewName}`);
 }
 
-function reconcileViewProperty(baseToken, table, viewName, property, desired, fieldIds) {
+function reconcileViewProperty(baseToken, tableId, tableName, viewId, viewName, property, desired, fieldIds) {
   const commands = viewPropertyCommands[property];
   if (!commands) throw new Error(`Unsupported view property reconcile: ${property}`);
 
@@ -233,15 +242,15 @@ function reconcileViewProperty(baseToken, table, viewName, property, desired, fi
   const mutationDesired = mutationDesiredForViewProperty(property, desired, fieldIds);
 
   return reconcileIfNeeded({
-    read: () => getViewProperty(baseToken, table, viewName, property),
+    read: () => getViewProperty(baseToken, tableId, tableName, viewId, viewName, property),
     matches: (payload) => viewPropertyMatches(payload, readbackDesired, fieldIds),
     write: () => runLarkMutation([
       "base", commands.set,
       "--base-token", baseToken,
-      "--table-id", table,
-      "--view-id", viewName,
+      "--table-id", tableId,
+      "--view-id", viewId,
       "--json", JSON.stringify(mutationDesired),
-    ], `Set ${property} ${table}.${viewName}`),
+    ], `Set ${property} ${tableName}.${viewName}`),
   });
 }
 
@@ -251,52 +260,54 @@ function mergePropertyStats(target, result) {
   target.no_op_recovered += result.noOpRecovered;
 }
 
-function setViewConfig(baseToken, table, view, fieldIds) {
+function setViewConfig(baseToken, tableId, tableName, viewId, view, fieldIds) {
   const stats = { changed: 0, unchanged: 0, no_op_recovered: 0 };
   if (view.visible_fields) {
     const desired = { visible_fields: view.visible_fields };
-    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", desired, fieldIds));
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "visible_fields", desired, fieldIds));
   }
-  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter, fieldIds));
-  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group, fieldIds));
-  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort, fieldIds));
+  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "filter", view.filter, fieldIds));
+  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "group", view.group, fieldIds));
+  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "sort", view.sort, fieldIds));
   return stats;
 }
 
-function verifyViewPropertyEventually(baseToken, table, viewName, property, desired, fieldIds) {
+function verifyViewPropertyEventually(baseToken, tableId, tableName, viewId, viewName, property, desired, fieldIds) {
   const result = verifyEventually({
-    read: () => getViewProperty(baseToken, table, viewName, property),
+    read: () => getViewProperty(baseToken, tableId, tableName, viewId, viewName, property),
     matches: (payload) => viewPropertyMatches(payload, desired, fieldIds),
     sleep: sleepMs,
   });
   if (!result.ok) {
     const actual = JSON.stringify(result.last).slice(0, 1200);
     const expected = JSON.stringify(desired).slice(0, 1200);
-    throw new Error(`Final readback mismatch for ${property} ${table}.${viewName} after ${result.attempts} eventual-consistency reads; expected=${expected}; actual=${actual}`);
+    throw new Error(`Final readback mismatch for ${property} ${tableName}.${viewName} after ${result.attempts} eventual-consistency reads; expected=${expected}; actual=${actual}`);
   }
   return result.attempts;
 }
 
-function verifyTableViewState(baseToken, tableContract, fieldIds) {
+function verifyTableViewState(baseToken, tableId, tableContract, fieldIds) {
   let reads = 0;
+  const liveViews = listViews(baseToken, tableId, tableContract.name);
   for (const view of tableContract.views) {
+    const viewId = requireResourceId(liveViews, view.name, `View ${tableContract.name}`);
     if (view.visible_fields) {
       const desired = { visible_fields: view.visible_fields };
-      reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "visible_fields", readbackDesiredForViewProperty("visible_fields", desired, fieldIds), fieldIds);
+      reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "visible_fields", readbackDesiredForViewProperty("visible_fields", desired, fieldIds), fieldIds);
     }
-    if (view.filter) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "filter", view.filter, fieldIds);
-    if (view.group) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "group", readbackDesiredForViewProperty("group", view.group, fieldIds), fieldIds);
-    if (view.sort) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "sort", readbackDesiredForViewProperty("sort", view.sort, fieldIds), fieldIds);
+    if (view.filter) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "filter", view.filter, fieldIds);
+    if (view.group) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "group", readbackDesiredForViewProperty("group", view.group, fieldIds), fieldIds);
+    if (view.sort) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "sort", readbackDesiredForViewProperty("sort", view.sort, fieldIds), fieldIds);
   }
   return reads;
 }
 
-function deleteView(baseToken, table, viewRef, viewName) {
-  runLark(["base", "+view-delete", "--base-token", baseToken, "--table-id", table, "--view-id", viewRef, "--yes"], `Delete extra view ${table}.${viewName}`);
-  waitForAbsentResource(() => listViews(baseToken, table), viewName, `Deleted extra view ${table}.${viewName}`);
+function deleteView(baseToken, tableId, tableName, viewId, viewName) {
+  runLark(["base", "+view-delete", "--base-token", baseToken, "--table-id", tableId, "--view-id", viewId, "--yes"], `Delete extra view ${tableName}.${viewName}`);
+  waitForAbsentResource(() => listViews(baseToken, tableId, tableName), viewName, `Deleted extra view ${tableName}.${viewName}`);
 }
 
-function reconcileViews(baseToken) {
+function reconcileViews(baseToken, tables) {
   let created = 0;
   let renamed = 0;
   let deleted = 0;
@@ -304,45 +315,50 @@ function reconcileViews(baseToken) {
   const properties = { changed: 0, unchanged: 0, no_op_recovered: 0 };
 
   for (const tableContract of uxContract.tables) {
-    const fieldIds = fieldIdsByName(listFields(baseToken, tableContract.name), tableContract.name);
-    let existing = listViews(baseToken, tableContract.name);
+    const tableId = requireResourceId(tables, tableContract.name, "Table");
+    const fieldIds = fieldIdsByName(listFields(baseToken, tableId, tableContract.name), tableContract.name);
+    let existing = listViews(baseToken, tableId, tableContract.name);
     const desiredNames = new Set(tableContract.views.map((view) => view.name));
     const first = tableContract.views[0];
 
     if (!existing.has(first.name)) {
       const reusable = [...existing.entries()].find(([name]) => !desiredNames.has(name));
       if (reusable) {
-        renameView(baseToken, tableContract.name, reusable[1].id || reusable[0], first.name);
+        const reusableId = requireResourceId(existing, reusable[0], `View ${tableContract.name}`);
+        renameView(baseToken, tableId, tableContract.name, reusableId, reusable[0], first.name);
         renamed += 1;
-        existing = listViews(baseToken, tableContract.name);
+        existing = listViews(baseToken, tableId, tableContract.name);
       }
     }
 
     for (const view of tableContract.views) {
-      if (!existing.has(view.name)) {
-        createView(baseToken, tableContract.name, view);
+      let meta = existing.get(view.name);
+      if (!meta) {
+        meta = createView(baseToken, tableId, tableContract.name, view);
         created += 1;
-        existing.set(view.name, { id: "" });
+        existing.set(view.name, meta);
       }
-      const result = setViewConfig(baseToken, tableContract.name, view, fieldIds);
+      const viewId = requireResourceId(existing, view.name, `View ${tableContract.name}`);
+      const result = setViewConfig(baseToken, tableId, tableContract.name, viewId, view, fieldIds);
       properties.changed += result.changed;
       properties.unchanged += result.unchanged;
       properties.no_op_recovered += result.no_op_recovered;
     }
 
     if (uxContract.prune_extra_views === true) {
-      existing = listViews(baseToken, tableContract.name);
-      for (const [name, meta] of existing.entries()) {
+      existing = listViews(baseToken, tableId, tableContract.name);
+      for (const [name] of existing.entries()) {
         if (!desiredNames.has(name)) {
-          deleteView(baseToken, tableContract.name, meta.id || name, name);
+          const viewId = requireResourceId(existing, name, `View ${tableContract.name}`);
+          deleteView(baseToken, tableId, tableContract.name, viewId, name);
           deleted += 1;
         }
       }
     }
 
     const namesResult = verifyEventually({
-      read: () => listViews(baseToken, tableContract.name),
-      matches: (map) => tableContract.views.every((view) => map.has(view.name)) && (uxContract.prune_extra_views !== true || [...map.keys()].every((name) => desiredNames.has(name))),
+      read: () => listViews(baseToken, tableId, tableContract.name),
+      matches: (map) => tableContract.views.every((view) => map.has(view.name) && Boolean(map.get(view.name)?.id)) && (uxContract.prune_extra_views !== true || [...map.keys()].every((name) => desiredNames.has(name))),
       sleep: sleepMs,
     });
     if (!namesResult.ok) {
@@ -352,7 +368,7 @@ function reconcileViews(baseToken) {
       throw new Error(`View reconciliation failed for ${tableContract.name}; missing=[${missing.join(", ")}], extras=[${extras.join(", ")}]`);
     }
 
-    verificationReads += verifyTableViewState(baseToken, tableContract, fieldIds);
+    verificationReads += verifyTableViewState(baseToken, tableId, tableContract, fieldIds);
   }
 
   return { created, renamed, deleted, properties, verification_reads: verificationReads };
@@ -389,8 +405,7 @@ function reconcileDashboards(baseToken) {
       dashboardsCreated += 1;
       dashboards.set(dashboard.name, dashboardMeta);
     }
-    const dashboardId = dashboardMeta?.id;
-    if (!dashboardId) throw new Error(`Dashboard ${dashboard.name} exists but no dashboard_id/id was returned`);
+    const dashboardId = requireResourceId(dashboards, dashboard.name, "Dashboard");
 
     let blocks = listDashboardBlocks(baseToken, dashboardId);
     for (const block of dashboard.blocks) {
@@ -404,7 +419,7 @@ function reconcileDashboards(baseToken) {
     const blockNames = new Set(dashboard.blocks.map((block) => block.name));
     const finalBlocks = verifyEventually({
       read: () => listDashboardBlocks(baseToken, dashboardId),
-      matches: (map) => [...blockNames].every((name) => map.has(name)),
+      matches: (map) => [...blockNames].every((name) => map.has(name) && Boolean(map.get(name)?.id)),
       sleep: sleepMs,
     });
     if (!finalBlocks.ok) {
@@ -420,8 +435,8 @@ function apply(args) {
   runRaw(["--version"], "lark-cli version", { json: false });
   verifyUserAuthStatus();
   const baseToken = args.baseToken.trim();
-  verifySchema(baseToken);
-  const views = reconcileViews(baseToken);
+  const tables = verifySchema(baseToken);
+  const views = reconcileViews(baseToken, tables);
   const dashboards = reconcileDashboards(baseToken);
   const finalViewCount = uxContract.tables.reduce((sum, table) => sum + table.views.length, 0);
   const finalBlockCount = uxContract.dashboards.reduce((sum, dashboard) => sum + dashboard.blocks.length, 0);
