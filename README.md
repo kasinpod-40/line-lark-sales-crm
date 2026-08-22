@@ -8,7 +8,7 @@ Current product release: **0.3.0**
 
 `LINE OA → webhook → Cloudflare Queue → AI/CRM processing → Lark Sales Inbox Card → Claim Case → Reply in Thread ↔ LINE`
 
-The same root Lark Card is updated through the case lifecycle. The Lark Thread is the conversation. Lark Base is the business CRM store. Cloudflare D1/Queues/R2 hold operational state, idempotency and expiring bridge media.
+The same root Lark Card is updated through the case lifecycle. The Lark Thread is the conversation. Lark Base is the business CRM store. Cloudflare D1/Queues hold technical state and idempotency. Lark message resources are the media authority; D1 stores only expiring proxy metadata when LINE needs a public HTTPS media URL.
 
 ## Product / delivery model
 
@@ -45,7 +45,8 @@ See `docs/lark-base-schema.md` before creating the Base.
 - atomic `[🙋‍♂️ รับเคสนี้]`
 - collaborative Reply-in-Thread → LINE bridge while keeping one Case Owner for KPI/Deal attribution
 - strict root-chat isolation with visible warning
-- inbound LINE messages/media → case Thread
+- inbound LINE messages/media → case Thread with Lark as the stored-media authority
+- expiring D1-authorized Worker proxy for Lark message resources when LINE requires a public HTTPS image/audio/file URL
 - manual quotation form (up to 5 line items) → preview/confirm → `Sales_Deals` → LINE Flex
 - persisted quote total → payment form → preview/confirm → PromptPay QR PNG → LINE
 - `ปิดยอด 45000` / `ยอดเงิน 150000` confirmed Closed Won flow + customer Active Customer and configurable VIP recalculation
@@ -66,6 +67,6 @@ Local checks and GitHub CI are verification gates, not runtime environments. The
 
 ## Golden/customer installation prerequisites
 
-Do not enable real webhook/event traffic until the three Base tables, D1, R2, Queue/DLQ, LINE credentials, Lark app/event subscriptions, PromptPay target and public Worker URL are configured.
+Do not enable real webhook/event traffic until the three Base tables, D1, Queue/DLQ, LINE credentials, Lark app/event subscriptions, PromptPay target and public Worker URL are configured. R2 is not required for release 0.3.0; Lark message resources are the media authority.
 
 Use `deploy/product-manifest.json` as the machine-readable release/install contract and `docs/setup.md` as the controlled E2E checklist.

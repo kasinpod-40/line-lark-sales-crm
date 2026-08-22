@@ -5,7 +5,7 @@ This repository is the reusable LINE-only Lark Sales CRM product. Before changin
 1. Read `docs/current-task.md` first.
 2. Inspect the current branch/PR HEAD and open PRs; never trust a stale SHA from chat.
 3. Keep the customer-facing Lark Base model to exactly three business tables unless an explicit new requirement changes that decision: `Customers`, `Chat_Tracking`, `Sales_Deals`.
-4. Technical state (dedupe, retries, claim locks, routing, QR assets, drafts, media metadata) belongs in D1/Queues/R2, not additional Base tables.
+4. Technical state (dedupe, retries, claim locks, routing, QR assets, drafts and expiring media-proxy metadata) belongs in D1/Queues, not additional Base tables. Lark message resources are the media authority; `/assets/media/<token>` may proxy an authorized Lark message resource for LINE when a public HTTPS URL is required. Do not introduce R2 unless a later explicit requirement needs independent object storage.
 5. Reuse the LINE/AI/queue core already present here. Do not re-import marketplace/Shopee/Lazada/TikTok Shop/stock/order-routing code from the source CRM.
 6. Financial actions must be previewed/confirmed and idempotent.
 7. Delivery model is **single-stack only** for our golden implementation: no DEV/UAT/STAGING/PROD environment ladder. Local/CI are verification gates, then the real Lark/LINE/Cloudflare target is provisioned once and used for controlled E2E and continued operation. Read `docs/single-stack-delivery.md`.

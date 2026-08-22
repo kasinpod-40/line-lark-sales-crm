@@ -25,9 +25,6 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "line-lark-sales-crm", "database_id": "REPLACE_D1_ID" }
   ],
-  "r2_buckets": [
-    { "binding": "MEDIA_BUCKET", "bucket_name": "line-lark-sales-crm-media" }
-  ],
   "queues": {
     "producers": [
       { "binding": "LINE_EVENTS_QUEUE", "queue": "line-lark-sales-crm-events" }

@@ -66,13 +66,15 @@ export class LarkEventService {
       const key = resourceKey(event);
       if (!key) throw new Error("Lark image message missing image_key");
       const resource = await this.lark.downloadMessageResource(event.messageId, key, "image");
-      const stored = await this.media.store({
+      const stored = await this.media.storeLarkReference({
         caseId,
         sourceMessageId: event.messageId,
+        resourceKey: key,
+        resourceType: "image",
         mediaKind: "image",
-        bytes: resource.bytes,
         mimeType: resource.mime_type,
         fileName: resource.file_name || `lark-${event.messageId}.jpg`,
+        sizeBytes: resource.size_bytes,
       });
       if (["image/jpeg", "image/png"].includes(resource.mime_type) && resource.size_bytes <= 1024 * 1024) {
         const message: LineImageMessage = { type: "image", originalContentUrl: stored.url, previewImageUrl: stored.url };
@@ -88,13 +90,15 @@ export class LarkEventService {
       if (!key) throw new Error(`Lark ${event.messageType} message missing file_key`);
       const resource = await this.lark.downloadMessageResource(event.messageId, key, "file");
       const fileName = asString(event.content.file_name).trim() || resource.file_name || `${event.messageType}-${event.messageId}`;
-      const stored = await this.media.store({
+      const stored = await this.media.storeLarkReference({
         caseId,
         sourceMessageId: event.messageId,
+        resourceKey: key,
+        resourceType: "file",
         mediaKind: event.messageType === "audio" ? "audio" : "file",
-        bytes: resource.bytes,
         mimeType: resource.mime_type,
         fileName,
+        sizeBytes: resource.size_bytes,
       });
       const duration = Math.max(0, asNumber(event.content.duration, 0));
       const lineAudioCompatible = event.messageType === "audio"

@@ -15,7 +15,6 @@ import {
 import type { LineEventQueueMessage } from "../queues/line-event.types";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
-import { MediaAssetService } from "./media-asset.service";
 
 const MAX_LARK_INLINE_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -85,13 +84,11 @@ export class CaseService {
   private readonly operational: OperationalRepository;
   private readonly base: LarkBaseRepository;
   private readonly lark: LarkClient;
-  private readonly media: MediaAssetService;
 
   constructor(private readonly env: Env) {
     this.operational = new OperationalRepository(env);
     this.base = new LarkBaseRepository(env);
     this.lark = new LarkClient(env);
-    this.media = new MediaAssetService(env);
   }
 
   async processLineEvent(event: LineEventQueueMessage): Promise<void> {
@@ -182,8 +179,6 @@ export class CaseService {
       const savedCustomer = await this.base.upsertCustomer(customer);
       if (route.customer_record_id !== savedCustomer.recordId) {
         await this.operational.attachCustomerRecord(route.case_id, savedCustomer.recordId);
-        // Keep the in-flight route synchronized so the very first CASE row can
-        // create its Customers link without waiting for a later webhook event.
         route = { ...route, customer_record_id: savedCustomer.recordId };
       }
 
@@ -209,39 +204,24 @@ export class CaseService {
 
       if (event.message.type === "image" && downloadedBytes) {
         const extension = downloadedMime.includes("png") ? "png" : downloadedMime.includes("webp") ? "webp" : "jpg";
+        const fileName = `line-${event.message.id}.${extension}`;
         try {
-          const imageKey = await this.lark.uploadMessageImage(downloadedBytes, downloadedMime, `line-${event.message.id}.${extension}`);
+          const imageKey = await this.lark.uploadMessageImage(downloadedBytes, downloadedMime, fileName);
           await this.lark.replyImage(route.root_message_id, imageKey);
-        } catch (error) {
-          const stored = await this.media.store({
-            caseId: route.case_id,
-            sourceMessageId: event.message.id,
-            mediaKind: "image",
-            bytes: downloadedBytes,
-            mimeType: downloadedMime,
-            fileName: `line-${event.message.id}.${extension}`,
-          });
-          await this.lark.replyText(route.root_message_id, `🖼 รูปจากลูกค้า (เปิดไฟล์)\n${stored.url}`);
-          console.warn("LARK_IMAGE_UPLOAD_FALLBACK", error instanceof Error ? error.message : String(error));
+        } catch (imageError) {
+          try {
+            const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName);
+            await this.lark.replyFile(route.root_message_id, fileKey);
+            console.warn("LARK_IMAGE_FILE_FALLBACK", imageError instanceof Error ? imageError.message : String(imageError));
+          } catch (fileError) {
+            throw new Error(`Lark image delivery failed: ${imageError instanceof Error ? imageError.message : String(imageError)}; file fallback: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+          }
         }
         await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
       } else if ((event.message.type === "file" || event.message.type === "audio") && downloadedBytes) {
         const fileName = fileNameFor(event, downloadedMime);
-        try {
-          const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName, event.message.duration_ms);
-          await this.lark.replyFile(route.root_message_id, fileKey);
-        } catch (error) {
-          const stored = await this.media.store({
-            caseId: route.case_id,
-            sourceMessageId: event.message.id,
-            mediaKind: event.message.type === "audio" ? "audio" : "file",
-            bytes: downloadedBytes,
-            mimeType: downloadedMime,
-            fileName,
-          });
-          await this.lark.replyText(route.root_message_id, `📎 ${fileName}\n${stored.url}`);
-          console.warn("LARK_FILE_UPLOAD_FALLBACK", error instanceof Error ? error.message : String(error));
-        }
+        const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName, event.message.duration_ms);
+        await this.lark.replyFile(route.root_message_id, fileKey);
         await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
       } else if ((event.message.type === "file" || event.message.type === "audio") && !downloadedBytes) {
         await this.lark.replyText(route.root_message_id, `⚠️ ${messageText(event, ai)} • ไม่ดึงไฟล์เข้า Worker อัตโนมัติ: ${bridgeMediaSkippedReason || "เกินขนาด bridge ที่กำหนด"}`);

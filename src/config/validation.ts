@@ -128,9 +128,6 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
   if (!env.DB) {
     issues.push({ severity: "error", code: "MISSING_BINDING", key: "DB", message: "D1 binding DB is required" });
   }
-  if (!env.MEDIA_BUCKET) {
-    issues.push({ severity: "error", code: "MISSING_BINDING", key: "MEDIA_BUCKET", message: "R2 binding MEDIA_BUCKET is required" });
-  }
   if (!env.LINE_EVENTS_QUEUE) {
     issues.push({ severity: "error", code: "MISSING_BINDING", key: "LINE_EVENTS_QUEUE", message: "Queue producer binding LINE_EVENTS_QUEUE is required" });
   }
@@ -234,7 +231,7 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
       lark_base: hasText(env.LARK_BASE_APP_TOKEN) && hasText(env.LARK_BASE_CUSTOMERS_TABLE_ID) && hasText(env.LARK_BASE_CHAT_TRACKING_TABLE_ID) && hasText(env.LARK_BASE_SALES_DEALS_TABLE_ID),
       promptpay: hasText(env.PROMPTPAY_TARGET) && hasText(env.PUBLIC_BASE_URL),
       operational_state: Boolean(env.DB && env.LINE_EVENTS_QUEUE),
-      media: Boolean(env.MEDIA_BUCKET && hasText(env.PUBLIC_BASE_URL)),
+      media: Boolean(env.DB && hasText(env.LARK_APP_ID) && hasText(env.LARK_APP_SECRET) && hasText(env.PUBLIC_BASE_URL)),
       workers_ai: Boolean(env.AI),
       vip_thresholds_configured: hasText(env.VIP_GOLD_MIN_THB) || hasText(env.VIP_DIAMOND_MIN_THB),
     },

@@ -9,7 +9,6 @@ function validEnv() {
     LINE_CHANNEL_ACCESS_TOKEN: 'line-token',
     LINE_EVENTS_QUEUE: { send: async () => undefined },
     DB: {},
-    MEDIA_BUCKET: {},
     AI: { run: async () => ({}) },
     LARK_APP_ID: 'cli_a1b2c3d4',
     LARK_APP_SECRET: 'lark-secret',
@@ -31,7 +30,7 @@ function validEnv() {
   };
 }
 
-test('complete reusable deployment configuration is ready', () => {
+test('complete Lark-first deployment configuration is ready without R2', () => {
   const result = validateDeploymentConfig(validEnv());
   assert.equal(result.ready, true);
   assert.deepEqual(result.errors, []);
@@ -40,6 +39,7 @@ test('complete reusable deployment configuration is ready', () => {
   assert.equal(result.checks.lark_base, true);
   assert.equal(result.checks.operational_state, true);
   assert.equal(result.checks.media, true);
+  assert.equal(result.errors.some((issue) => issue.key === 'MEDIA_BUCKET'), false);
 });
 
 test('invalid public URL and reversed VIP thresholds fail readiness', () => {

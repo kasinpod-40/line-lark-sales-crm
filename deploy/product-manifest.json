@@ -2,6 +2,9 @@
   "product": "line-lark-sales-crm",
   "release": "0.3.0",
   "deployment_model": "one_golden_stack_plus_repeatable_customer_installations",
+  "media_authority": "lark_message_resources",
+  "media_proxy_metadata": "D1.media_assets",
+  "r2_required": false,
   "business_tables": [
     "Customers",
     "Chat_Tracking",
@@ -18,7 +21,6 @@
   ],
   "cloudflare_bindings": {
     "d1": "DB",
-    "r2": "MEDIA_BUCKET",
     "queue_producer": "LINE_EVENTS_QUEUE",
     "workers_ai_optional": "AI"
   },

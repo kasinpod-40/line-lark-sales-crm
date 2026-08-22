@@ -18,6 +18,9 @@ test('product manifest locks reusable three-table contract and migration order',
     'migrations/0002_srs_media_and_campaign_observability.sql',
   ]);
   for (const migration of manifest.d1_migrations) assert.equal(fs.existsSync(migration), true, migration);
+  assert.equal(manifest.media_authority, 'lark_message_resources');
+  assert.equal(manifest.r2_required, false);
+  assert.equal(Object.hasOwn(manifest.cloudflare_bindings, 'r2'), false);
 });
 
 test('product manifest contains no credential values and requires customer-specific installation keys', () => {

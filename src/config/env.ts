@@ -1,4 +1,4 @@
-import type { D1Database, QueueProducer, R2Bucket, WorkersAI } from "../platform/cloudflare";
+import type { D1Database, QueueProducer, WorkersAI } from "../platform/cloudflare";
 import type { CrmQueueMessage } from "../queues/line-event.types";
 
 export interface Env {
@@ -7,7 +7,6 @@ export interface Env {
   LINE_EVENTS_QUEUE: QueueProducer<CrmQueueMessage>;
 
   DB: D1Database;
-  MEDIA_BUCKET: R2Bucket;
   AI?: WorkersAI;
   AI_TEXT_MODEL?: string;
   AI_VISION_MODEL?: string;
