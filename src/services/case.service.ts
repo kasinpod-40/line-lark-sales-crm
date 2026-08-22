@@ -6,7 +6,12 @@ import type { CustomerSnapshot } from "../core/models";
 import { newId, stableUuid } from "../utils/id";
 import { buildCaseCard } from "../providers/lark/lark.cards";
 import { LarkClient } from "../providers/lark/lark.client";
-import { downloadExternalContent, downloadLineMessageContent, getLineUserProfile } from "../providers/line/line.provider";
+import {
+  downloadExternalContent,
+  downloadLineMessageContent,
+  getLineUserProfile,
+  LineContentTooLargeError,
+} from "../providers/line/line.provider";
 import type { LineEventQueueMessage } from "../queues/line-event.types";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
@@ -104,22 +109,29 @@ export class CaseService {
       let ai: AIAnalysisResult;
       let downloadedBytes: ArrayBuffer | null = null;
       let downloadedMime = "";
+      let bridgeMediaSkippedReason = "";
       if (event.message.type === "image") {
         const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
-          ? await downloadExternalContent(event.message.original_content_url)
-          : await downloadLineMessageContent(this.env, event.message.id);
+          ? await downloadExternalContent(event.message.original_content_url, MAX_LARK_INLINE_FILE_BYTES)
+          : await downloadLineMessageContent(this.env, event.message.id, MAX_LARK_INLINE_FILE_BYTES);
         if (!downloaded.mime_type.startsWith("image/")) throw new Error(`LINE message content is not an image: ${downloaded.mime_type}`);
         downloadedBytes = downloaded.bytes;
         downloadedMime = downloaded.mime_type;
         ai = imageAiToAnalysis(await analyzeImage(this.env, downloaded.bytes, downloaded.mime_type));
       } else if (event.message.type === "file" && (event.message.file_size ?? 0) > MAX_LARK_INLINE_FILE_BYTES) {
+        bridgeMediaSkippedReason = `ไฟล์ใหญ่เกิน ${Math.round(MAX_LARK_INLINE_FILE_BYTES / 1024 / 1024)} MB`;
         ai = await analyzeIncomingText(this.env, messageText(event));
       } else if (event.message.type === "file" || event.message.type === "audio") {
-        const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
-          ? await downloadExternalContent(event.message.original_content_url)
-          : await downloadLineMessageContent(this.env, event.message.id);
-        downloadedBytes = downloaded.bytes;
-        downloadedMime = downloaded.mime_type;
+        try {
+          const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
+            ? await downloadExternalContent(event.message.original_content_url, MAX_LARK_INLINE_FILE_BYTES)
+            : await downloadLineMessageContent(this.env, event.message.id, MAX_LARK_INLINE_FILE_BYTES);
+          downloadedBytes = downloaded.bytes;
+          downloadedMime = downloaded.mime_type;
+        } catch (error) {
+          if (!(error instanceof LineContentTooLargeError)) throw error;
+          bridgeMediaSkippedReason = error.message;
+        }
         ai = await analyzeIncomingText(this.env, messageText(event));
       } else {
         ai = await analyzeIncomingText(this.env, messageText(event));
@@ -228,8 +240,8 @@ export class CaseService {
           console.warn("LARK_FILE_UPLOAD_FALLBACK", error instanceof Error ? error.message : String(error));
         }
         await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
-      } else if (event.message.type === "file" && !downloadedBytes) {
-        await this.lark.replyText(route.root_message_id, `⚠️ ${messageText(event, ai)} • ไฟล์ใหญ่เกิน ${Math.round(MAX_LARK_INLINE_FILE_BYTES / 1024 / 1024)} MB จึงไม่ดึงเข้า Worker อัตโนมัติ`);
+      } else if ((event.message.type === "file" || event.message.type === "audio") && !downloadedBytes) {
+        await this.lark.replyText(route.root_message_id, `⚠️ ${messageText(event, ai)} • ไม่ดึงไฟล์เข้า Worker อัตโนมัติ: ${bridgeMediaSkippedReason || "เกินขนาด bridge ที่กำหนด"}`);
       } else if (event.message.type === "location") {
         const latitude = event.message.latitude;
         const longitude = event.message.longitude;
