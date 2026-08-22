@@ -1,13 +1,25 @@
-# Integration Setup / Controlled E2E Checklist
+# Final Stack Setup / Controlled E2E Checklist
 
-The application code is intended to be completed before the customer Base exists. Real LINE/Lark/Base verification begins only after provisioning the external resources below.
+This project has **one real integration stack only**. There is no DEV/UAT/STAGING/PROD ladder.
+
+Local work and GitHub CI are verification gates. The resources below are created once as the final customer-facing target, the controlled E2E runs directly on that same target, and the same resources are retained for operation after acceptance.
+
+Read `docs/single-stack-delivery.md` first.
 
 Requirements authority:
 1. PM 5-function summary = latest executive/acceptance summary.
 2. Full SRS/SOW = detailed requirements for the same scope.
 3. Field/API naming = lower `snake_case`.
 
-## 1. Lark Base
+## 0. Pre-flight before creating external resources
+
+- exact code-bearing HEAD must have successful GitHub CI
+- do not create a second Base/Worker for testing
+- decide final names/IDs once
+- prepare final secrets and PromptPay target
+- keep LINE webhook and Lark event delivery disabled/disconnected until the final target is fully configured and ready for controlled E2E
+
+## 1. Final Lark Base — create once
 
 Create exactly the three tables from `docs/lark-base-schema.md`:
 
@@ -16,7 +28,6 @@ Create exactly the three tables from `docs/lark-base-schema.md`:
 - `Sales_Deals`
 
 Then record:
-
 - Base app token
 - Customers table ID
 - Chat_Tracking table ID
@@ -31,10 +42,11 @@ Important relation/formula setup:
 - SLA formulas/fields per final schema
 - Closed Won value + `total_spend_thb` rollup per final schema
 
-## 2. Lark App / Bot
+This Base is the same Base used for controlled E2E and continued live operation. Do not clone/promote data into another Base afterward.
+
+## 2. Final Lark App / Bot
 
 The app/bot must be able to:
-
 - send/update interactive messages/cards in the Sales Inbox group
 - receive `im.message.receive_v1`
 - receive interactive-card action callbacks
@@ -45,12 +57,11 @@ The app/bot must be able to:
 - read/write the target Lark Base tables
 
 Callback:
-
 `https://<worker-host>/webhooks/lark`
 
 Configure verification token. If callback encryption is enabled, also configure the encrypt key.
 
-Add the bot to the intended Sales Inbox group and store that group's chat ID in `LARK_SALES_INBOX_CHAT_ID`.
+Add the bot to the final Sales Inbox group and store that group's chat ID in `LARK_SALES_INBOX_CHAT_ID`.
 
 ### Thread security behavior
 
@@ -59,10 +70,9 @@ Add the bot to the intended Sales Inbox group and store that group's chat ID in 
 - Other human team members in the same Sales Inbox Thread may assist with customer-facing replies.
 - Human messages typed in the Sales Inbox root chat are **never** sent to LINE. The bot posts an orange warning telling the user to use Reply in Thread.
 
-## 3. LINE Messaging API
+## 3. Final LINE Messaging API channel
 
 Webhook:
-
 `https://<worker-host>/webhooks/line`
 
 Configure:
@@ -72,7 +82,9 @@ Configure:
 
 The Worker validates `x-line-signature` before Queue mutation.
 
-Supported current bridge behavior:
+Do not enable the webhook until Worker, D1, R2, Queue, Lark App and Base IDs are configured and `/health` is ready for the controlled E2E.
+
+Supported bridge behavior:
 
 | Direction | Type | Behavior |
 |---|---|---|
@@ -91,10 +103,9 @@ Supported current bridge behavior:
 
 These fallback mappings are intentional platform-compatibility behavior, not silent data loss.
 
-## 4. Cloudflare resources
+## 4. Final Cloudflare resources — create once
 
 Provision:
-
 - Worker
 - D1 database
 - R2 bucket `line-lark-sales-crm-media`
@@ -103,11 +114,10 @@ Provision:
 - Workers AI binding `AI` if AI inference is desired
 
 Apply D1 migrations **once and in order** before traffic:
-
 1. `migrations/0001_operational_state.sql`
 2. `migrations/0002_srs_media_and_campaign_observability.sql`
 
-The shared Queue carries both inbound LINE jobs and confirmed asynchronous CRM Campaign dispatch jobs. Campaign delivery therefore does not depend on a long Lark callback `waitUntil()` window.
+The shared Queue carries inbound LINE jobs and confirmed asynchronous CRM Campaign dispatch jobs. Campaign delivery therefore does not depend on a long Lark callback `waitUntil()` window.
 
 R2 is used only for expiring bridge media assets. D1 `media_assets` metadata authorizes `/assets/media/<token>` access until expiry.
 
@@ -116,20 +126,17 @@ Text AI defaults to `@cf/meta/llama-3.1-8b-instruct-fast`. Vision defaults to `@
 ## 5. PromptPay / public assets
 
 Configure PromptPay target type:
-
 - `phone`
 - `national_id`
 - `ewallet`
 
 `PUBLIC_BASE_URL` must be the final public HTTPS Worker base URL because LINE fetches:
-
 - PromptPay QR: `/assets/qr/<token>.png`
 - bridge media: `/assets/media/<token>`
 
-## 6. Worker configuration
+## 6. Final Worker configuration
 
 Secrets:
-
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LARK_APP_ID`
@@ -139,7 +146,6 @@ Secrets:
 - `PROMPTPAY_TARGET`
 
 Vars:
-
 - `LARK_SALES_INBOX_CHAT_ID`
 - `LARK_BASE_APP_TOKEN`
 - `LARK_BASE_CUSTOMERS_TABLE_ID`
@@ -157,7 +163,6 @@ Vars:
 - optional `AI_VISION_MODEL`
 
 Bindings:
-
 - `DB` = D1
 - `MEDIA_BUCKET` = R2
 - `LINE_EVENTS_QUEUE` = shared Queue producer
@@ -165,7 +170,17 @@ Bindings:
 
 Use `wrangler.jsonc.example` as template. Do not commit real secrets.
 
-## 7. Controlled E2E order
+## 7. Enable traffic only when ready
+
+After Base/resource/config readiness is complete:
+1. verify `/health`
+2. configure/enable Lark callback/event delivery
+3. configure/enable LINE webhook
+4. immediately run the controlled E2E below
+
+There is no later environment promotion step.
+
+## 8. Controlled E2E on the same final stack
 
 Run in this order so each failure has a narrow root cause:
 
@@ -188,4 +203,15 @@ Run in this order so each failure has a narrow root cause:
 17. Retry/redelivery tests: LINE webhook, Queue, Card Action, outbound retry-key 409, Campaign batches.
 18. Verify no root-chat/customer cross-route leakage under concurrent test traffic.
 
-Do not call the system production-ready until this real controlled E2E has captured evidence.
+## 9. If a controlled E2E step fails
+
+Do not create a DEV/UAT clone and do not rebuild the Base from scratch.
+
+- capture the exact failing request/state/readback
+- diagnose the root cause
+- make the smallest code/config/schema correction
+- require CI success for any code change
+- rerun the affected flow on this same final stack
+- preserve successful state unless rollback is actually required
+
+When all controlled E2E steps pass, this same stack becomes `live-ready` and remains the operating system.
