@@ -6,15 +6,29 @@ Status: LOCKED — 2026-08-22 (ICT)
 
 Build and finish **one complete reference/golden stack owned by us first**. This is the product template and acceptance reference.
 
-When the product is sold to a customer, do **not** redesign or fork the business logic for that customer. Deploy the same application package and the same three-table Lark Base contract into the customer's own target resources, then supply only customer-specific configuration and credentials.
+When the product is sold to a customer, do **not** redesign or fork the business logic for that customer. Deploy the same verified product release and the same three-table Lark Base contract into the customer's own target resources, then supply only customer-specific configuration and credentials.
 
 This is different from a DEV → UAT → PROD promotion ladder. Our golden stack is the finished product/reference. Each sold customer receives a separate installation of that finished product.
+
+## Portable release contract
+
+`deploy/product-manifest.json` is the machine-readable installation contract for the release. It locks:
+- product/release identity
+- exactly three Lark Base business tables
+- D1 migration order
+- required Cloudflare bindings
+- required/optional secrets and vars
+- callback paths
+- acceptance/setup documents
+- anti-fork and naming rules
+
+The manifest contains **names of configuration keys only**, never credential values.
 
 ## What is portable and should stay identical
 
 The following should remain the same across our golden stack and every customer installation:
 
-- application source code and release version
+- application source code and verified release/SHA
 - LINE webhook/event contracts
 - Queue/D1/R2 operational model
 - Lark Case Card / Thread workflow
@@ -28,6 +42,7 @@ The following should remain the same across our golden stack and every customer 
   - `Sales_Deals`
 - lower `snake_case` field/API naming
 - D1 migrations and runtime safety/idempotency rules
+- deployment-readiness validator and `/health` semantics
 - controlled installation/E2E checklist
 
 ## What changes per customer
@@ -56,15 +71,16 @@ The repository remains the reusable product source. Deployment values are suppli
 
 ## Installation lifecycle for each sold customer
 
-1. Select the verified product release/SHA.
+1. Select the verified product release/SHA and matching `deploy/product-manifest.json`.
 2. Create the customer's final Lark Base from `docs/lark-base-schema.md`.
 3. Provision the customer's Worker/D1/R2/Queue/DLQ and Lark App/Bot integration.
-4. Apply D1 migrations in order.
+4. Apply D1 migrations in manifest order.
 5. Inject customer-specific secrets/vars/bindings; never edit source just to change IDs or credentials.
-6. Connect the customer's LINE OA and Lark callbacks only after configuration is complete.
-7. Run the same controlled E2E checklist from `docs/setup.md` against that customer's final installation.
-8. Fix reusable product defects in the main codebase, not as an undocumented one-off customer patch.
-9. Keep customer-specific business configuration outside reusable core code wherever possible.
+6. Call `/health` before enabling callbacks. It must return HTTP 200 with `configuration.ready=true`; HTTP 503 means configuration still has a blocking issue. Health output must never expose credential values.
+7. Connect the customer's LINE OA and Lark callbacks only after configuration is complete.
+8. Run the same controlled E2E checklist from `docs/setup.md` against that customer's final installation.
+9. Fix reusable product defects in the main codebase, not as an undocumented one-off customer patch.
+10. Keep customer-specific business configuration outside reusable core code wherever possible.
 
 ## Golden-stack rule
 
@@ -96,5 +112,7 @@ The product is reusable-ready when:
 - golden stack passes controlled E2E
 - source contains no embedded deployment credentials/resource IDs
 - all required customer-specific values are represented as secrets/vars/bindings/config
+- `/health` rejects missing/placeholder/invalid critical deployment configuration before callbacks are enabled
 - Base schema and D1 migrations are deterministic and documented
+- `deploy/product-manifest.json` matches the verified release
 - a fresh customer installation can be created from the repository + setup docs without rediscovering architecture decisions
