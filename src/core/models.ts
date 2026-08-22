@@ -33,7 +33,7 @@ export interface CustomerSnapshot {
   display_name: string;
   picture_url?: string;
   stage: string;
-  vip_level?: string;
+  vip_status?: string;
   assigned_sales_id?: string;
   assigned_sales_name?: string;
   ai: AIAnalysisResult;
