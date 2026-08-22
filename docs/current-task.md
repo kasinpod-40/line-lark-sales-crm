@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / UX DELIVERY SPLIT INTO SERVER STRUCTURE+SETTINGS THEN BASE JS SDK VISIBLE-FIELDS / NEXT STEP IS RESUME CLI UX APPLY ON THE SAME BASE TO MATERIALIZE ALL 22 VIEWS + DASHBOARDS, THEN RUN THE EXISTING IN-BASE VISIBLE-FIELDS EXTENSION.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / UX DELIVERY SPLIT INTO SERVER STRUCTURE+SETTINGS THEN BASE JS SDK VISIBLE-FIELDS / LIVE FILTER READBACK NULL-ARITY NORMALIZATION FIX VERIFIED / NEXT STEP IS RESUME CLI UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -102,6 +102,19 @@ Open the existing local Extension inside the same Base and click **Apply visible
 
 Do not run Lane B before Lane A has completed all 22 View resources.
 
+### Live filter readback arity normalization
+During Lane A, `Chat_Tracking.🟢 SLA Fast` reached a semantically correct persisted filter but final verification rejected it because Lark read back unary `non_empty` as:
+
+`["first_response_seconds", "non_empty", null]`
+
+while the deterministic contract uses:
+
+`["first_response_seconds", "non_empty"]`
+
+Those forms are semantically identical. The shared View matcher now canonicalizes only the unary `empty` / `non_empty` operators by dropping a trailing `null` before comparison. Binary/ternary operators are not weakened; for example a `<=` condition with a `null` operand does not match a two-item tuple. Regression coverage uses the exact live `🟢 SLA Fast` payload.
+
+This is a verifier compatibility fix only; it does not rewrite the persisted filter or alter business semantics.
+
 ## Terminal operator-safety rule — locked
 
 **Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell.**
@@ -120,18 +133,18 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`deffe9278bd667502e10c4eca00a0999881bcf4b`
+`6efa60a453b2985ff7aed8e36b0d89efb50c01f4`
 
 GitHub CI:
-- run `32567456121` / run #174
-- job `97018063135`
+- run `32567753219` / run #177
+- job `97018768837`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **69/69 PASS**
+- unit/contract tests: **70/70 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-Regression coverage now locks that the server UX provisioner never reconciles/final-verifies `visible_fields` and that plan/apply declare the Base JS SDK UI lane instead.
+Regression coverage locks both the split visible-field delivery lane and the exact live unary-filter readback behavior (`empty` / `non_empty` with trailing `null`).
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -160,15 +173,14 @@ Phase C customer sale:
 
 ## Next work
 
-1. Stop the currently running visible-field local server if it is still open; keep the Extension definition in the Base.
-2. Pull branch head containing verified code SHA `deffe9278bd667502e10c4eca00a0999881bcf4b` or a later docs-only commit containing it.
-3. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` on the same golden Base and require the server pass to finish all 22 Views + 2 dashboards / 23 blocks with `visible_fields.status=BASE_JS_SDK_UI_REQUIRED`.
-4. Start `npm run lark:base:ux:visible-ui`, reopen/refresh the existing Extension, click **Apply visible fields**, and require all 22 Views exact.
-5. Apply the three locked table icons manually in Lark UI.
-6. Visually inspect the 22 curated Views and both Dashboards.
-7. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
-8. Configure secrets/vars, enable callbacks, then run controlled E2E.
-9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Pull branch head containing verified code SHA `6efa60a453b2985ff7aed8e36b0d89efb50c01f4` or a later docs-only commit containing it.
+2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` on the same golden Base and require the server pass to finish all 22 Views + 2 dashboards / 23 blocks with `visible_fields.status=BASE_JS_SDK_UI_REQUIRED`.
+3. Start `npm run lark:base:ux:visible-ui`, reopen/refresh the existing Extension, click **Apply visible fields**, and require all 22 Views exact.
+4. Apply the three locked table icons manually in Lark UI.
+5. Visually inspect the 22 curated Views and both Dashboards.
+6. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
+7. Configure secrets/vars, enable callbacks, then run controlled E2E.
+8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
