@@ -15,8 +15,8 @@ import {
   buildQuotePreviewCard,
 } from "../providers/lark/lark.cards";
 import { LarkClient } from "../providers/lark/lark.client";
-import { campaignFlex, paymentConfirmationFlex, paymentFlex, quotationFlex } from "../providers/line/line.flex";
-import { getLineUserProfile, multicastLineMessages, pushLineMessages, type LineImageMessage } from "../providers/line/line.provider";
+import { paymentConfirmationFlex, paymentFlex, quotationFlex } from "../providers/line/line.flex";
+import { getLineUserProfile, pushLineMessages, type LineImageMessage } from "../providers/line/line.provider";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
 import { asNumber, asString, type UnknownRecord } from "../utils/json";
@@ -80,7 +80,7 @@ export class CardActionService {
   private requireOwner(route: CaseRoute, openId: string): void {
     if (route.status === "RESOLVED") throw new Error("เคสนี้ปิดแล้ว ไม่สามารถใช้ action เก่าได้");
     if (!route.owner_open_id) throw new Error("กรุณารับเคสก่อนทำรายการ");
-    if (route.owner_open_id !== openId) throw new Error(`เคสนี้ถูกดูแลโดย ${route.owner_name ?? "Sales คนอื่น"}`);
+    if (route.owner_open_id !== openId) throw new Error(`Action นี้ทำได้โดย Case Owner (${route.owner_name ?? "Sales"}) เท่านั้น`);
   }
 
   private async customerName(route: CaseRoute): Promise<string> {
@@ -88,7 +88,10 @@ export class CardActionService {
     return profile?.displayName?.trim() || `LINE User ${route.line_user_id.slice(-6)}`;
   }
 
-  private async refreshRoot(route: CaseRoute, options: { dealAmount?: number; performance?: Awaited<ReturnType<LarkBaseRepository["getSalesPerformance"]>> } = {}): Promise<void> {
+  private async refreshRoot(
+    route: CaseRoute,
+    options: { dealAmount?: number; performance?: Awaited<ReturnType<LarkBaseRepository["getSalesPerformance"]>> } = {},
+  ): Promise<void> {
     const root = this.requireRoot(route);
     const ai = analyzeByRules(route.latest_message_text ?? "");
     if (route.latest_intent) ai.intent = route.latest_intent as typeof ai.intent;
@@ -151,8 +154,7 @@ export class CardActionService {
 
         case "open_quote_form": {
           this.requireOwner(route, event.operatorOpenId);
-          const vat = asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7);
-          await this.lark.replyCard(root, buildQuoteFormCard(route.case_id, vat));
+          await this.lark.replyCard(root, buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7)));
           break;
         }
 
@@ -170,11 +172,11 @@ export class CardActionService {
           const draftId = asString(event.value.draft_id);
           const draft = await this.operational.getDraft<QuoteDraft>(draftId);
           if (!draft || draft.kind !== "quote" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("ใบเสนอราคานี้หมดอายุหรือไม่ถูกต้อง");
-          const dealId = `deal:${draft.draft_id}`;
-          const dealRecordId = await this.base.saveQuote({ dealId, route, quote: draft.payload, quotationStatus: "Pending Send" });
+          const dealRecordId = await this.base.saveQuote({ dealId: `deal:${draft.draft_id}`, route, quote: draft.payload, quotationStatus: "Pending Send" });
           await this.operational.setDealRecord(route.case_id, dealRecordId);
           await pushLineMessages(this.env, route.line_user_id, [quotationFlex(companyName(this.env), await this.customerName(route), draft.payload)], await stableUuid(`quote:${draft.draft_id}`));
           await this.base.markQuoteSent(dealRecordId);
+          await this.base.markCustomerQuotationSent(route.customer_id);
           route = await this.operational.setCaseStatus(route.case_id, "QUOTED");
           await this.base.upsertCaseTracking(route);
           await this.operational.finishDraft(draft.draft_id);
@@ -210,8 +212,7 @@ export class CardActionService {
           const draftId = asString(event.value.draft_id);
           const draft = await this.operational.getDraft<PaymentDraft>(draftId);
           if (!draft || draft.kind !== "payment" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("QR draft หมดอายุหรือไม่ถูกต้อง");
-          const targetType = this.env.PROMPTPAY_TARGET_TYPE ?? "phone";
-          const payload = buildPromptPayPayload(this.env.PROMPTPAY_TARGET, draft.payload.amount, targetType);
+          const payload = buildPromptPayPayload(this.env.PROMPTPAY_TARGET, draft.payload.amount, this.env.PROMPTPAY_TARGET_TYPE ?? "phone");
           const token = await stableUuid(`qr-asset:${draft.draft_id}`);
           const ttlSeconds = Math.max(3600, asNumber(this.env.QR_TTL_SECONDS, 604800));
           const now = Date.now();
@@ -243,7 +244,7 @@ export class CardActionService {
           this.requireOwner(route, event.operatorOpenId);
           const latest = await this.base.getLatestDealForCase(route.case_id);
           const amount = latest?.deal.payment_amount || latest?.deal.total_amount || 0;
-          if (!(amount > 0)) throw new Error("ยังไม่มียอด Deal สำหรับปิดการขาย — ใช้คำสั่งใน Thread เช่น ‘ปิดยอด 45000’ เพื่อระบุยอดแบบ Manual");
+          if (!(amount > 0)) throw new Error("ยังไม่มียอด Deal — ใช้คำสั่งใน Thread เช่น ‘ปิดยอด 45000’ เพื่อระบุยอด Manual");
           const draftId = newId("draft");
           await this.operational.createDraft<CloseDealDraft>({ draft_id: draftId, kind: "close_deal", case_id: route.case_id, created_by: event.operatorOpenId, payload: { amount } });
           await this.lark.replyCard(root, buildCloseDealConfirmCard(route.case_id, draftId, amount));
@@ -258,11 +259,10 @@ export class CardActionService {
 
           let latest = await this.base.getLatestDealForCase(route.case_id);
           if (!latest) {
-            const directQuote = buildDirectCloseQuote(draft.payload.amount, `DIRECT-${route.case_id}`);
             const directRecordId = await this.base.saveQuote({
               dealId: `deal:direct:${draft.draft_id}`,
               route,
-              quote: directQuote,
+              quote: buildDirectCloseQuote(draft.payload.amount, `DIRECT-${route.case_id}`),
               quotationStatus: "Not Required",
             });
             await this.operational.setDealRecord(route.case_id, directRecordId);
@@ -288,10 +288,7 @@ export class CardActionService {
           await this.base.upsertCaseTracking(route);
           const latest = await this.base.getLatestDealForCase(route.case_id);
           const performance = route.owner_open_id ? await this.base.getSalesPerformance(route.owner_open_id) : undefined;
-          await this.refreshRoot(route, {
-            dealAmount: latest?.deal.payment_amount ?? latest?.deal.total_amount,
-            performance,
-          });
+          await this.refreshRoot(route, { dealAmount: latest?.deal.payment_amount ?? latest?.deal.total_amount, performance });
           await this.lark.replyText(root, "✅ ปิดเคสและอัปเดต SLA / Sales Performance แล้ว");
           break;
         }
@@ -338,19 +335,14 @@ export class CardActionService {
           const draftId = asString(event.value.draft_id);
           const draft = await this.operational.getDraft<CampaignStoredDraft>(draftId);
           if (!draft || draft.kind !== "campaign" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("Campaign draft หมดอายุหรือไม่ถูกต้อง");
-          const recipients = Array.from(new Set(draft.payload.recipients.filter(Boolean)));
-          for (let index = 0; index < recipients.length; index += 500) {
-            const batchIndex = Math.floor(index / 500);
-            const users = recipients.slice(index, index + 500);
-            const retryKey = await stableUuid(`campaign:${draft.draft_id}:${batchIndex}`);
-            await this.operational.ensureCampaignBatch(draft.draft_id, batchIndex, retryKey, users.length);
-            const state = await this.operational.getCampaignBatch(draft.draft_id, batchIndex);
-            if (state?.state === "SENT") continue;
-            await multicastLineMessages(this.env, users, [campaignFlex(companyName(this.env), draft.payload.campaign)], state?.retry_key || retryKey);
-            await this.operational.markCampaignBatchSent(draft.draft_id, batchIndex);
-          }
-          await this.operational.finishDraft(draft.draft_id);
-          await this.lark.replyText(root, `🚀 ส่ง Campaign ${draft.payload.campaign.segment.toUpperCase()} ครบ ${recipients.length} LINE users แล้ว`);
+          await this.env.LINE_EVENTS_QUEUE.send({
+            schema_version: 1,
+            channel: "CRM",
+            job_type: "campaign_dispatch",
+            draft_id: draft.draft_id,
+            case_id: route.case_id,
+          }, { contentType: "json" });
+          await this.lark.replyText(root, `⏳ รับงาน Campaign ${draft.payload.campaign.segment.toUpperCase()} แล้ว • ${draft.payload.recipients.length} LINE users • ระบบกำลังส่งผ่าน Queue`);
           break;
         }
 
