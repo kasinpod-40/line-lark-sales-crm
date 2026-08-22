@@ -1,10 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
+const provisioner = path.join(root, 'scripts/provision-lark-base.mjs');
 const contract = JSON.parse(fs.readFileSync(path.join(root, 'deploy/lark-base-contract.json'), 'utf8'));
 
 function table(name) {
@@ -19,6 +21,27 @@ function allFieldNames(value) {
     ...(value.deferred_fields || []).map((field) => field.name),
     ...(value.generated_backlinks || []),
   ]);
+}
+
+function runApplyWithFakeLarkAuth({ identity = 'user', verified = true, verifyError = '' } = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'line-crm-lark-cli-'));
+  const fakeCli = path.join(tempDir, 'lark-cli');
+  const status = { appId: 'cli_test', brand: 'lark', defaultAs: 'auto', identity, verified };
+  if (verifyError) status.verifyError = verifyError;
+  fs.writeFileSync(fakeCli, `#!/usr/bin/env node\nconst args = process.argv.slice(2);\nif (args.length === 1 && args[0] === '--version') { console.log('1.0.89'); process.exit(0); }\nif (args[0] === 'auth' && args[1] === 'status') { console.log(${JSON.stringify(JSON.stringify(status))}); process.exit(0); }\nif (args[0] === 'base' && args[1] === '+base-create') { console.log(JSON.stringify({ ok: false })); process.exit(0); }\nconsole.error('unexpected fake lark-cli call: ' + args.join(' '));\nprocess.exit(2);\n`);
+  fs.chmodSync(fakeCli, 0o755);
+  try {
+    return spawnSync(process.execPath, [provisioner, '--apply'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${tempDir}${path.delimiter}${process.env.PATH || ''}`,
+      },
+    });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 test('Lark Base contract is exactly the reusable three-table snake_case model', () => {
@@ -112,7 +135,7 @@ test('contract contains no deployment credentials or concrete Lark resource IDs'
 });
 
 test('provisioner defaults to zero-mutation plan mode', () => {
-  const output = execFileSync(process.execPath, [path.join(root, 'scripts/provision-lark-base.mjs')], {
+  const output = execFileSync(process.execPath, [provisioner], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -121,4 +144,18 @@ test('provisioner defaults to zero-mutation plan mode', () => {
   assert.equal(result.mode, 'plan');
   assert.equal(result.mutation_count, 0);
   assert.deepEqual(result.operations.at(-2).tables, ['Customers', 'Chat_Tracking', 'Sales_Deals']);
+});
+
+test('provisioner accepts the current auth status JSON contract without an ok field', () => {
+  const result = runApplyWithFakeLarkAuth({ identity: 'user', verified: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Create golden Lark Base returned JSON without ok=true/);
+  assert.doesNotMatch(result.stderr, /Lark user auth status returned JSON without ok=true/);
+});
+
+test('provisioner refuses an unverified user identity before Base mutation', () => {
+  const result = runApplyWithFakeLarkAuth({ identity: 'user', verified: false, verifyError: 'token verification failed' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Lark user auth status is not verified \| token verification failed/);
+  assert.doesNotMatch(result.stderr, /Create golden Lark Base/);
 });

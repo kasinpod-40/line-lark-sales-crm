@@ -85,7 +85,7 @@ function parseJson(text, label) {
   }
 }
 
-function runRaw(args, label, { json = true } = {}) {
+function runRaw(args, label, { json = true, requireOk = true } = {}) {
   const result = spawnSync("lark-cli", args, {
     encoding: "utf8",
     env: cliEnv(),
@@ -112,12 +112,30 @@ function runRaw(args, label, { json = true } = {}) {
   }
   if (!json) return String(result.stdout || "").trim();
   const parsed = parseJson(result.stdout, label);
-  if (parsed?.ok !== true) throw new Error(`${label} returned JSON without ok=true`);
+  if (requireOk && parsed?.ok !== true) throw new Error(`${label} returned JSON without ok=true`);
   return parsed;
 }
 
 function runLark(args, label) {
-  return runRaw([...args, "--as", "user"], label, { json: true });
+  return runRaw([...args, "--as", "user"], label, { json: true, requireOk: true });
+}
+
+function verifyUserAuthStatus() {
+  const status = runRaw(
+    ["auth", "status", "--json", "--verify"],
+    "Lark user auth status",
+    { json: true, requireOk: false },
+  );
+  if (status?.identity !== "user") {
+    throw new Error(`Lark user auth status is not user-ready: identity=${String(status?.identity || "none")}`);
+  }
+  if (status?.verified !== true) {
+    const detail = typeof status?.verifyError === "string" && status.verifyError.trim()
+      ? ` | ${status.verifyError.trim()}`
+      : "";
+    throw new Error(`Lark user auth status is not verified${detail}`);
+  }
+  return status;
 }
 
 function collectObjects(value, out = []) {
@@ -223,7 +241,7 @@ function findDeferredField(key) {
 
 async function apply(args) {
   runRaw(["--version"], "lark-cli version", { json: false });
-  runRaw(["auth", "status", "--json", "--verify"], "Lark user auth status", { json: true });
+  verifyUserAuthStatus();
 
   let baseToken = args.baseToken.trim();
   const createdNames = [];
