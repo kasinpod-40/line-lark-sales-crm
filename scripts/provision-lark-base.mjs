@@ -38,7 +38,14 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage:\n  npm run lark:base:plan\n  npm run lark:base:apply -- --base-name "LINE OA Sales CRM"\n  npm run lark:base:apply -- --base-token <existing_base_token>\n\nDefault mode is plan-only and performs zero Lark mutations.\n--apply creates/reconciles the three-table contract using lark-cli as the logged-in user.\n--base-token resumes against an existing Base instead of creating a new Base.`);
+  console.log(`Usage:
+  npm run lark:base:plan
+  npm run lark:base:apply -- --base-name "LINE OA Sales CRM"
+  npm run lark:base:apply -- --base-token <existing_base_token>
+
+Default mode is plan-only and performs zero Lark mutations.
+--apply creates/reconciles the three-table contract using lark-cli as the logged-in user.
+--base-token resumes against an existing Base instead of creating a new Base.`);
 }
 
 function plan(args) {
@@ -53,7 +60,15 @@ function plan(args) {
   }
   for (const key of contract.deferred_field_order) ordered.push({ action: "ensure_deferred_field", field: key });
   ordered.push({ action: "verify_exact_three_business_tables", tables: contract.tables.map((table) => table.name) });
-  ordered.push({ action: "print_worker_vars", keys: ["LARK_BASE_APP_TOKEN", "LARK_BASE_CUSTOMERS_TABLE_ID", "LARK_BASE_CHAT_TRACKING_TABLE_ID", "LARK_BASE_SALES_DEALS_TABLE_ID"] });
+  ordered.push({
+    action: "print_worker_vars",
+    keys: [
+      "LARK_BASE_APP_TOKEN",
+      "LARK_BASE_CUSTOMERS_TABLE_ID",
+      "LARK_BASE_CHAT_TRACKING_TABLE_ID",
+      "LARK_BASE_SALES_DEALS_TABLE_ID",
+    ],
+  });
   console.log(JSON.stringify({
     ok: true,
     mode: "plan",
@@ -102,11 +117,15 @@ function runRaw(args, label, { json = true, requireOk = true } = {}) {
     try {
       const parsed = JSON.parse(detail);
       const error = parsed?.error || {};
-      detail = [error.type, error.subtype, error.message, error.hint, Array.isArray(error.missing_scopes) ? `missing_scopes=${error.missing_scopes.join(",")}` : ""]
-        .filter(Boolean)
-        .join(" | ");
+      detail = [
+        error.type,
+        error.subtype,
+        error.message,
+        error.hint,
+        Array.isArray(error.missing_scopes) ? `missing_scopes=${error.missing_scopes.join(",")}` : "",
+      ].filter(Boolean).join(" | ");
     } catch {
-      // Keep the bounded raw diagnostic below.
+      // Keep bounded raw diagnostics.
     }
     throw new Error(`${label} failed (exit ${result.status}): ${detail.slice(0, 1600)}`);
   }
@@ -157,11 +176,21 @@ function firstStringByKeys(payload, keys) {
   return "";
 }
 
+function objectId(obj, legacyKey) {
+  if (typeof obj[legacyKey] === "string" && obj[legacyKey].trim()) return obj[legacyKey].trim();
+  if (typeof obj.id === "string" && obj.id.trim()) return obj.id.trim();
+  return "";
+}
+
 function tableMap(payload) {
   const map = new Map();
   for (const obj of collectObjects(payload)) {
-    const name = typeof obj.table_name === "string" ? obj.table_name : typeof obj.name === "string" ? obj.name : "";
-    const id = typeof obj.table_id === "string" ? obj.table_id : "";
+    const name = typeof obj.table_name === "string"
+      ? obj.table_name
+      : typeof obj.name === "string"
+        ? obj.name
+        : "";
+    const id = objectId(obj, "table_id");
     if (name && id) map.set(name, { id, raw: obj });
   }
   return map;
@@ -170,8 +199,12 @@ function tableMap(payload) {
 function fieldMap(payload) {
   const map = new Map();
   for (const obj of collectObjects(payload)) {
-    const name = typeof obj.name === "string" ? obj.name : typeof obj.field_name === "string" ? obj.field_name : "";
-    const id = typeof obj.field_id === "string" ? obj.field_id : "";
+    const name = typeof obj.name === "string"
+      ? obj.name
+      : typeof obj.field_name === "string"
+        ? obj.field_name
+        : "";
+    const id = objectId(obj, "field_id");
     if (name && id) map.set(name, { id, type: obj.type, raw: obj });
   }
   return map;
@@ -219,14 +252,22 @@ async function listTables(baseToken, requiredNames = []) {
 }
 
 function listFields(baseToken, tableName) {
-  const response = runLark(["base", "+field-list", "--base-token", baseToken, "--table-id", tableName], `Lark field list ${tableName}`);
+  const response = runLark(
+    ["base", "+field-list", "--base-token", baseToken, "--table-id", tableName],
+    `Lark field list ${tableName}`,
+  );
   return fieldMap(response);
 }
 
 function createFields(baseToken, tableName, fields, label) {
   if (!fields.length) return;
   const hasFormula = fields.some((field) => field.type === "formula");
-  const args = ["base", "+field-create", "--base-token", baseToken, "--table-id", tableName, "--json", JSON.stringify(fields)];
+  const args = [
+    "base", "+field-create",
+    "--base-token", baseToken,
+    "--table-id", tableName,
+    "--json", JSON.stringify(fields),
+  ];
   if (hasFormula) args.push("--i-have-read-guide");
   runLark(args, label);
 }
@@ -245,6 +286,7 @@ async function apply(args) {
 
   let baseToken = args.baseToken.trim();
   const createdNames = [];
+
   if (!baseToken) {
     const firstTable = contract.tables[0];
     const response = runLark([
@@ -260,7 +302,6 @@ async function apply(args) {
   }
 
   let tables = await listTables(baseToken, createdNames);
-  // Resume mode must be safe against accidentally pointing at an unrelated Base.
   assertNoUnexpectedTables(tables);
   for (const table of contract.tables) {
     if (tables.has(table.name)) validateExistingFields(table, listFields(baseToken, table.name));
@@ -276,25 +317,29 @@ async function apply(args) {
       ], `Create table ${table.name}`);
       createdNames.push(table.name);
       tables = await listTables(baseToken, createdNames);
-      if (!tables.has(table.name)) throw new Error(`Table ${table.name} creation returned success but table is not discoverable yet`);
+      if (!tables.has(table.name)) {
+        throw new Error(`Table ${table.name} creation returned success but table is not discoverable yet`);
+      }
     }
   }
 
-  // Resume-safe reconciliation: existing tables may be partially provisioned.
   for (const table of contract.tables) {
     let fields = listFields(baseToken, table.name);
     validateExistingFields(table, fields);
-    const missing = table.fields.filter((field) => field.name !== table.primary_field && !fields.has(field.name));
+    const missing = table.fields.filter(
+      (field) => field.name !== table.primary_field && !fields.has(field.name),
+    );
     if (missing.length) {
       createFields(baseToken, table.name, missing, `Create missing fields in ${table.name}`);
       fields = listFields(baseToken, table.name);
       const stillMissing = missing.filter((field) => !fields.has(field.name));
-      if (stillMissing.length) throw new Error(`Missing fields after create in ${table.name}: ${stillMissing.map((field) => field.name).join(", ")}`);
+      if (stillMissing.length) {
+        throw new Error(`Missing fields after create in ${table.name}: ${stillMissing.map((field) => field.name).join(", ")}`);
+      }
       validateExistingFields(table, fields);
     }
   }
 
-  // Formula fields are created only after all source tables/fields exist.
   for (const key of contract.deferred_field_order) {
     const { table, field } = findDeferredField(key);
     const fields = listFields(baseToken, table.name);
@@ -317,7 +362,9 @@ async function apply(args) {
       ...(table.generated_backlinks || []),
     ];
     const missing = expectedNames.filter((name) => !fields.has(name));
-    if (missing.length) throw new Error(`Final field verification failed in ${table.name}; missing: ${missing.join(", ")}`);
+    if (missing.length) {
+      throw new Error(`Final field verification failed in ${table.name}; missing: ${missing.join(", ")}`);
+    }
   }
 
   const result = {
@@ -327,7 +374,9 @@ async function apply(args) {
     product_release: contract.product_release,
     base_name: args.baseName,
     base_token: baseToken,
-    tables: Object.fromEntries(contract.tables.map((table) => [table.name, tables.get(table.name)?.id || ""])),
+    tables: Object.fromEntries(
+      contract.tables.map((table) => [table.name, tables.get(table.name)?.id || ""]),
+    ),
     worker_vars: {
       LARK_BASE_APP_TOKEN: baseToken,
       LARK_BASE_CUSTOMERS_TABLE_ID: tables.get("Customers")?.id || "",
@@ -344,7 +393,11 @@ if (!args.apply) {
   plan(args);
 } else {
   apply(args).catch((error) => {
-    console.error(JSON.stringify({ ok: false, stage: "lark_base_provision", error: error instanceof Error ? error.message : String(error) }, null, 2));
+    console.error(JSON.stringify({
+      ok: false,
+      stage: "lark_base_provision",
+      error: error instanceof Error ? error.message : String(error),
+    }, null, 2));
     process.exit(1);
   });
 }
