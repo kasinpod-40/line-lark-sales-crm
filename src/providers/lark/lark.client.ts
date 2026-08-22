@@ -3,6 +3,13 @@ import { asString, isRecord } from "../../utils/json";
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
+export interface LarkDownloadedResource {
+  bytes: ArrayBuffer;
+  mime_type: string;
+  file_name?: string;
+  size_bytes: number;
+}
+
 async function tenantAccessToken(env: Env): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - now > 60_000) return cachedToken.value;
@@ -38,10 +45,43 @@ async function larkFetch(env: Env, path: string, init: RequestInit = {}): Promis
   return parsed;
 }
 
+async function larkBinaryFetch(env: Env, path: string): Promise<Response> {
+  const token = await tenantAccessToken(env);
+  const response = await fetch(`https://open.larksuite.com${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Lark resource ${path} failed: ${response.status} ${text.slice(0, 1000)}`);
+  }
+  return response;
+}
+
 function extractMessageId(response: unknown): string {
   if (!isRecord(response) || !isRecord(response.data)) return "";
   if (isRecord(response.data.message)) return asString(response.data.message.message_id);
   return asString(response.data.message_id);
+}
+
+function dispositionFileName(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const utf = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (utf) {
+    try { return decodeURIComponent(utf.replace(/^"|"$/g, "")); } catch { return utf; }
+  }
+  const plain = value.match(/filename="?([^";]+)"?/i)?.[1];
+  return plain?.trim() || undefined;
+}
+
+function larkFileType(fileName: string, mimeType: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".opus") || mimeType === "audio/opus") return "opus";
+  if (lower.endsWith(".mp4") || mimeType === "video/mp4") return "mp4";
+  if (lower.endsWith(".pdf") || mimeType === "application/pdf") return "pdf";
+  if (lower.endsWith(".doc")) return "doc";
+  if (lower.endsWith(".xls")) return "xls";
+  if (lower.endsWith(".ppt")) return "ppt";
+  return "stream";
 }
 
 export class LarkClient {
@@ -81,6 +121,14 @@ export class LarkClient {
     return extractMessageId(response);
   }
 
+  async replyFile(rootMessageId: string, fileKey: string): Promise<string> {
+    const response = await larkFetch(this.env, `/open-apis/im/v1/messages/${encodeURIComponent(rootMessageId)}/reply`, {
+      method: "POST",
+      body: JSON.stringify({ msg_type: "file", content: JSON.stringify({ file_key: fileKey }), reply_in_thread: true }),
+    });
+    return extractMessageId(response);
+  }
+
   async patchCard(messageId: string, card: unknown): Promise<void> {
     await larkFetch(this.env, `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}`, {
       method: "PATCH",
@@ -97,6 +145,36 @@ export class LarkClient {
     const key = asString(response.data.image_key);
     if (!key) throw new Error("Lark image upload returned no image_key");
     return key;
+  }
+
+  async uploadMessageFile(bytes: ArrayBuffer, mimeType: string, fileName: string, durationMs?: number): Promise<string> {
+    if (bytes.byteLength <= 0) throw new Error("Lark file upload is empty");
+    if (bytes.byteLength > 30 * 1024 * 1024) throw new Error("Lark message file upload exceeds 30 MB");
+    const form = new FormData();
+    form.set("file_type", larkFileType(fileName, mimeType));
+    form.set("file_name", fileName);
+    if (durationMs && durationMs > 0) form.set("duration", String(Math.round(durationMs)));
+    form.set("file", new Blob([bytes], { type: mimeType || "application/octet-stream" }), fileName);
+    const response = await larkFetch(this.env, "/open-apis/im/v1/files", { method: "POST", body: form });
+    if (!isRecord(response) || !isRecord(response.data)) throw new Error("Lark file upload returned invalid response");
+    const key = asString(response.data.file_key);
+    if (!key) throw new Error("Lark file upload returned no file_key");
+    return key;
+  }
+
+  async downloadMessageResource(messageId: string, fileKey: string, resourceType: "image" | "file"): Promise<LarkDownloadedResource> {
+    const response = await larkBinaryFetch(
+      this.env,
+      `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(fileKey)}?type=${resourceType}`,
+    );
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength <= 0) throw new Error("Lark message resource is empty");
+    return {
+      bytes,
+      mime_type: response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream",
+      file_name: dispositionFileName(response.headers.get("content-disposition")),
+      size_bytes: bytes.byteLength,
+    };
   }
 
   async getUserDisplayName(openId: string): Promise<string> {
