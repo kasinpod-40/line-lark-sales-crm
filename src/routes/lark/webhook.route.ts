@@ -85,12 +85,12 @@ export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerE
   try { body = await parseBody(await request.text(), env); }
   catch (error) { return jsonResponse({ ok: false, message: error instanceof Error ? error.message : String(error) }, 400); }
 
+  // Lark URL verification is a time-sensitive ownership handshake. The platform
+  // requires the received challenge to be echoed within one second. Do not put
+  // the handshake behind runtime event-token validation; real event/card pushes
+  // below remain protected by LARK_VERIFICATION_TOKEN.
   const challenge = asString(body.challenge);
-  if (challenge) {
-    const token = verificationToken(body);
-    if (env.LARK_VERIFICATION_TOKEN?.trim() && token !== env.LARK_VERIFICATION_TOKEN.trim()) return jsonResponse({ ok: false }, 401);
-    return jsonResponse({ challenge });
-  }
+  if (challenge) return jsonResponse({ challenge });
 
   const configuredToken = env.LARK_VERIFICATION_TOKEN?.trim();
   if (configuredToken) {
