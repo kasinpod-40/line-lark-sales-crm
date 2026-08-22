@@ -1,5 +1,7 @@
 import type { AIAnalysisResult } from "../../ai/ai.types";
+import { actionGuidance, intentLabel, leadQuality } from "../../ai/presentation";
 import type { CampaignDraft, CaseRoute, QuoteDraft, SalesPerformance } from "../../core/models";
+import { calculateSla, formatDuration } from "../../core/sla";
 import { formatMoney } from "../../utils/money";
 
 function md(content: string): unknown { return { tag: "div", text: { tag: "lark_md", content } }; }
@@ -20,20 +22,25 @@ export function buildCaseCard(input: {
   const resolved = route.status === "RESOLVED";
   const won = route.status === "WON" || resolved && (input.dealAmount ?? 0) > 0;
   const template = resolved ? "grey" : won ? "turquoise" : route.owner_open_id ? "green" : "blue";
-  const title = resolved ? `RESOLVED | ${customerName}` : route.status === "WON" ? `WON | ${customerName}` : route.owner_open_id ? `LINE | ${customerName} • ดูแลโดย ${route.owner_name ?? "Sales"}` : `LINE | ${customerName}`;
-  const lead = `${ai.hot_lead ? "🔥 Hot Lead" : "Lead"} • 🎯 ${ai.buyer_intent}`;
+  const title = resolved
+    ? `⚪ [LINE Client] ${customerName} (ปิดเคสแล้ว)${route.owner_name ? ` โดย ${route.owner_name}` : ""}`
+    : route.status === "WON"
+      ? `🏆 [LINE Client] ${customerName}`
+      : route.owner_open_id
+        ? `🟢 [LINE Client] ${customerName} (ดูแลโดย: ${route.owner_name ?? "Sales"})`
+        : `💬 [LINE Client] ${customerName}`;
   const elements: unknown[] = [
-    md(`**${lead}**\nAI Intent: **${ai.intent}** • Score: **${Math.round(ai.lead_score)}**\n${ai.ai_summary ? `🤖 ${ai.ai_summary}` : ""}`),
+    md(`**${leadQuality(ai.lead_score)} • ${intentLabel(ai.intent)}**\nBuyer Intent: **${ai.buyer_intent}** • Score: **${Math.round(ai.lead_score)}**\n${ai.ai_summary ? `🤖 ${ai.ai_summary}` : ""}`),
+    md(`💡 **AI Sales Copilot**\n${actionGuidance(ai)}`),
     md(`💬 **ข้อความล่าสุด**\n${input.latestMessage || "-"}`),
   ];
-  if (route.owner_open_id) elements.push(md(`👤 **Owner:** ${route.owner_name ?? route.owner_open_id}`));
+  if (route.owner_open_id) elements.push(md(`👤 **Case Owner:** ${route.owner_name ?? route.owner_open_id}\nสมาชิกทีมที่อยู่ใน Thread สามารถช่วยตอบลูกค้าได้ แต่ Owner ยังคงเป็นผู้รับผิดชอบ KPI/Deal`));
   if (input.dealAmount !== undefined) elements.push(md(`💰 **Deal:** ฿${formatMoney(input.dealAmount)}`));
 
   if (resolved) {
-    const firstResponse = route.first_response_at ? Math.max(0, Math.round((route.first_response_at - route.opened_at) / 1000)) : null;
-    const resolution = route.closed_at ? Math.max(0, Math.round((route.closed_at - route.opened_at) / 1000)) : null;
+    const sla = calculateSla(route);
     const perf = input.performance;
-    elements.push(md(`⚡ **First Response:** ${firstResponse === null ? "-" : `${firstResponse} วินาที`}\n⏱ **Resolution:** ${resolution === null ? "-" : `${resolution} วินาที`}\n📊 **Sales Performance:** ${perf ? `฿${formatMoney(perf.closed_won_amount)} / ${perf.closed_won_count} ดีล` : "-"}`));
+    elements.push(md(`⚡ **Case SLA:** ${formatDuration(sla.first_response_seconds)} • ${sla.sla_status}\n⏱ **Resolution:** ${formatDuration(sla.resolution_seconds)}\n📊 **Sales Performance:** ${perf ? `฿${formatMoney(perf.closed_won_amount)} / ${perf.closed_won_count} ดีล` : "-"}`));
   } else if (!route.owner_open_id) {
     elements.push(actions([button("🙋‍♂️ รับเคสนี้", { action: "claim_case", case_id: route.case_id }, "primary")]));
   } else if (route.status === "WON") {
@@ -41,16 +48,24 @@ export function buildCaseCard(input: {
     elements.push(actions([button("✅ ปิดเคสนี้", { action: "close_case", case_id: route.case_id }, "primary")]));
   } else {
     elements.push(actions([
-      button("🎨 ส่งใบเสนอราคา", { action: "open_quote_form", case_id: route.case_id }, "primary"),
+      button("🎨 ส่งใบเสนอราคา (Flex)", { action: "open_quote_form", case_id: route.case_id }, "primary"),
       button("💳 ส่ง QR ชำระเงิน", { action: "open_qr_form", case_id: route.case_id }),
     ]));
     elements.push(actions([
-      button("💰 ปิดการขาย", { action: "close_deal_prompt", case_id: route.case_id }),
-      button("📣 Re-target", { action: "open_campaign_form", segment: "retarget", case_id: route.case_id }),
-      button("✅ ปิดเคสนี้", { action: "close_case", case_id: route.case_id }, "danger"),
+      button("💰 ปิดการขายสำเร็จ", { action: "close_deal_prompt", case_id: route.case_id }),
+      button("📢 ยิงโปร Re-target", { action: "open_campaign_form", segment: "retarget", case_id: route.case_id }),
+      button("✅ ปิดเคสนี้ (Resolved)", { action: "close_case", case_id: route.case_id }, "danger"),
     ]));
   }
   return { config: { wide_screen_mode: true, update_multi: true }, header: { template, title: { tag: "plain_text", content: title } }, elements };
+}
+
+export function buildThreadGuardWarningCard(): unknown {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "orange", title: { tag: "plain_text", content: "⚠️ ข้อความนี้ไม่ได้ส่งไป LINE" } },
+    elements: [md("เพื่อป้องกันส่งผิดลูกค้า ระบบ **ไม่ส่งข้อความจากช่องแชทรวม** ไป LINE โดยเด็ดขาด\nกรุณาเปิด Case Card ของลูกค้าที่ต้องการ แล้วกด **Reply in Thread** ก่อนพิมพ์ตอบ")],
+  };
 }
 
 function input(name: string, placeholder: string, defaultValue = ""): unknown {
@@ -104,6 +119,17 @@ export function buildCloseDealConfirmCard(caseId: string, draftId: string, amoun
   ])] };
 }
 
+export function buildCampaignSegmentMenuCard(caseId: string): unknown {
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "purple", title: { tag: "plain_text", content: "📢 เลือกกลุ่ม Broadcast" } },
+    elements: [md("เลือก Segment ก่อน ระบบจะ Query ลูกค้า → Preview จำนวนผู้รับ → ต้องยืนยันอีกครั้งก่อนส่ง"), actions([
+      button("💎 VIP", { action: "open_campaign_form", case_id: caseId, segment: "vip" }, "primary"),
+      button("🎯 Re-target", { action: "open_campaign_form", case_id: caseId, segment: "retarget" }),
+    ])],
+  };
+}
+
 export function buildCampaignFormCard(caseId: string, segment: "vip" | "retarget"): unknown {
   return { config: { wide_screen_mode: true }, header: { template: "purple", title: { tag: "plain_text", content: `📣 โปร ${segment.toUpperCase()}` } }, elements: [
     { tag: "form", name: "campaign_form", elements: [input("title", "ชื่อโปรโมชัน"), input("detail", "รายละเอียด"), input("coupon_code", "โค้ดคูปอง (ถ้ามี)"), input("cta_label", "ข้อความปุ่ม เช่น ดูโปร"), input("cta_url", "URL ปุ่ม (HTTPS)"), input("valid_until", "ใช้ได้ถึง"), actions([{ tag: "button", type: "primary", action_type: "form_submit", name: "submit_campaign_preview", text: { tag: "plain_text", content: "ตรวจกลุ่ม + Preview" }, value: { action: "submit_campaign_preview", case_id: caseId, segment } }])] },
@@ -111,7 +137,7 @@ export function buildCampaignFormCard(caseId: string, segment: "vip" | "retarget
 }
 
 export function buildCampaignPreviewCard(caseId: string, draftId: string, campaign: CampaignDraft, count: number): unknown {
-  return { config: { wide_screen_mode: true }, header: { template: "orange", title: { tag: "plain_text", content: "Campaign Preview" } }, elements: [md(`Segment: **${campaign.segment}**\nMatched LINE users: **${count}**\n\n**${campaign.title}**\n${campaign.detail}${campaign.coupon_code ? `\n🎟 ${campaign.coupon_code}` : ""}`), actions([
+  return { config: { wide_screen_mode: true }, header: { template: "orange", title: { tag: "plain_text", content: "Campaign Preview" } }, elements: [md(`Segment: **${campaign.segment}**\nMatched / reachable-format LINE users: **${count}**\n\n**${campaign.title}**\n${campaign.detail}${campaign.coupon_code ? `\n🎟 ${campaign.coupon_code}` : ""}`), actions([
     button("🚀 ยืนยันยิง", { action: "confirm_campaign", case_id: caseId, draft_id: draftId }, "primary"),
     button("ยกเลิก", { action: "cancel_draft", draft_id: draftId }),
   ])] };
