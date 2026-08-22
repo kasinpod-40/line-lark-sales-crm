@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / MEDIA ARCHITECTURE CHANGED TO LARK-FIRST WITH D1-BACKED EXPIRING PROXY METADATA / R2 IS NO LONGER REQUIRED / SOURCE COMMIT CREATED AND AWAITING EXACT-HEAD CI / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / MEDIA ARCHITECTURE CHANGED TO LARK-FIRST WITH D1-BACKED EXPIRING PROXY METADATA / R2 IS NO LONGER REQUIRED / SOURCE CHANGE IS BEING VERIFIED BY EXACT-HEAD CI / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -117,7 +117,7 @@ Media behavior:
 
 ## Source change awaiting CI
 
-A source/config/test change was created to remove the R2 runtime dependency and make Lark message resources the bridge media authority.
+A source/config/test change removes the R2 runtime dependency and makes Lark message resources the bridge media authority.
 
 Changed areas include:
 - `Env` no longer requires `MEDIA_BUCKET`
@@ -129,7 +129,7 @@ Changed areas include:
 - canonical manifest and Wrangler example no longer contain R2 binding
 - tests cover no-R2 readiness and Lark media-locator encoding
 
-Exact source commit must pass CI before any Worker deployment or callback mutation.
+Exact source HEAD must pass CI before any Worker deployment or callback mutation.
 
 ## Terminal operator-safety rule — locked
 
@@ -149,7 +149,7 @@ PM/customer installations use the same verified release and resource pattern. Cu
 
 ## Next work
 
-1. Wait for exact-head GitHub CI for the Lark-first/no-R2 source change; do not deploy before it is green.
+1. Require exact-head GitHub CI for the Lark-first/no-R2 source change; do not deploy before it is green.
 2. Update local untracked `wrangler.jsonc` to remove any R2 binding and retain dedicated D1 + Queue/DLQ + optional AI.
 3. Configure/verify owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep callbacks disabled.
 4. Complete local Lark Base/Sales Inbox vars.
