@@ -14,7 +14,8 @@ Cloudflare is **not** temporary and is **not** replaced at PM handoff. The PM al
 
 Private-build target:
 - personal Lark Base / personal Lark App/Bot
-- owner Cloudflare Worker/D1/R2/Queue/DLQ
+- owner Cloudflare Worker/D1/Queue/DLQ with dedicated project resources
+- Lark message resources as bridge-media authority; no R2 requirement
 - reference/test LINE OA and PromptPay configuration as appropriate for controlled E2E
 
 ## Phase B — when PM formally starts
@@ -23,8 +24,9 @@ The main ownership change is on the **Lark side** so the PM can control/present 
 
 Target transition:
 - keep the same verified application release
-- keep the same Cloudflare Worker/D1/R2/Queue/DLQ where possible
+- keep the same dedicated Cloudflare Worker/D1/Queue/DLQ where possible
 - keep the same business logic and migration history
+- keep the Lark-first media model; files remain Lark message resources and D1 holds only expiring proxy metadata
 - move or recreate the Lark Base/App/Bot/Sales Inbox under PM-controlled Lark resources
 - replace only Lark-specific app credentials, Base/table IDs, chat IDs, verification/encryption values, and any other resource identity that changes
 - update Cloudflare secrets/vars to point to the PM-controlled Lark resources
@@ -42,6 +44,8 @@ The reusable contract remains:
 - same verified release/SHA
 - same three-table Lark Base schema
 - same D1 migrations
+- same Worker/D1/Queue/DLQ operational pattern
+- same Lark-first media authority and D1-authorized media proxy
 - same Card/Thread/Quote/QR/Deal/SLA/Broadcast behavior
 - customer-specific identities and credentials via secrets/vars/bindings
 

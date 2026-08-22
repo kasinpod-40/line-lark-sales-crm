@@ -17,6 +17,7 @@ This is different from a DEV → UAT → PROD promotion ladder. Our golden stack
 - exactly three Lark Base business tables
 - D1 migration order
 - required Cloudflare bindings
+- Lark message resources as the media authority
 - required/optional secrets and vars
 - callback paths
 - acceptance/setup documents
@@ -30,7 +31,8 @@ The following should remain the same across our golden stack and every customer 
 
 - application source code and verified release/SHA
 - LINE webhook/event contracts
-- Queue/D1/R2 operational model
+- Queue/D1 operational model
+- Lark message-resource media authority + expiring D1-authorized Worker proxy
 - Lark Case Card / Thread workflow
 - AI intent/lead contract
 - Quote / PromptPay / Smart Close workflows
@@ -45,6 +47,8 @@ The following should remain the same across our golden stack and every customer 
 - deployment-readiness validator and `/health` semantics
 - controlled installation/E2E checklist
 
+R2 is not required by release 0.3.0. Do not add a per-customer R2 bucket unless a later explicit product requirement needs independent object storage.
+
 ## What changes per customer
 
 Only configuration/resource identity should vary, for example:
@@ -56,7 +60,7 @@ Only configuration/resource identity should vary, for example:
 - PromptPay recipient/configuration
 - company/brand display name
 - customer-specific VIP thresholds
-- Cloudflare Worker/D1/R2/Queue/DLQ resource IDs/names if deployed in the customer's account
+- Cloudflare Worker/D1/Queue/DLQ resource IDs/names if deployed in the customer's account
 - AI model/binding settings if the customer environment differs
 
 No customer credential, Base ID, chat ID, PromptPay target, or deployed resource ID may be hard-coded into application source.
@@ -65,20 +69,20 @@ No customer credential, Base ID, chat ID, PromptPay target, or deployed resource
 
 Preferred commercial handoff is customer-owned or customer-controlled resources where practical:
 
-`Customer LINE OA + Customer Lark + Customer Base + Customer/managed Cloudflare resources`
+`Customer LINE OA + Customer Lark + Customer Base + Customer/managed Cloudflare Worker/D1/Queue/DLQ`
 
-The repository remains the reusable product source. Deployment values are supplied through environment variables, secrets, bindings, and provisioning output.
+The repository remains the reusable product source. Deployment values are supplied through environment variables, secrets, bindings, and provisioning output. Customer-facing files remain in Lark message resources; D1 stores only technical state and expiring media-proxy metadata.
 
 ## Installation lifecycle for each sold customer
 
 1. Select the verified product release/SHA and matching `deploy/product-manifest.json`.
 2. Create the customer's final Lark Base from `docs/lark-base-schema.md`.
-3. Provision the customer's Worker/D1/R2/Queue/DLQ and Lark App/Bot integration.
+3. Provision the customer's Worker/D1/Queue/DLQ and Lark App/Bot integration.
 4. Apply D1 migrations in manifest order.
 5. Inject customer-specific secrets/vars/bindings; never edit source just to change IDs or credentials.
 6. Call `/health` before enabling callbacks. It must return HTTP 200 with `configuration.ready=true`; HTTP 503 means configuration still has a blocking issue. Health output must never expose credential values.
 7. Connect the customer's LINE OA and Lark callbacks only after configuration is complete.
-8. Run the same controlled E2E checklist from `docs/setup.md` against that customer's final installation.
+8. Run the same controlled E2E checklist from `docs/setup.md` against that customer's final installation, including the Lark-backed media proxy path.
 9. Fix reusable product defects in the main codebase, not as an undocumented one-off customer patch.
 10. Keep customer-specific business configuration outside reusable core code wherever possible.
 
@@ -114,5 +118,6 @@ The product is reusable-ready when:
 - all required customer-specific values are represented as secrets/vars/bindings/config
 - `/health` rejects missing/placeholder/invalid critical deployment configuration before callbacks are enabled
 - Base schema and D1 migrations are deterministic and documented
+- Lark-first bridge media works without an R2 dependency
 - `deploy/product-manifest.json` matches the verified release
 - a fresh customer installation can be created from the repository + setup docs without rediscovering architecture decisions

@@ -86,44 +86,49 @@ Configure:
 
 The Worker validates `x-line-signature` before Queue mutation.
 
-Do not enable the webhook until Worker, D1, R2, Queue, Lark App and Base IDs are configured and `/health` is HTTP 200.
+Do not enable the webhook until Worker, D1, Queue/DLQ, Lark App and Base IDs are configured and `/health` is HTTP 200.
 
-Supported bridge behavior:
+### Lark-first bridge media behavior
+
+Lark message resources are the media authority. The product does **not** require R2.
 
 | Direction | Type | Behavior |
 |---|---|---|
 | LINE → Lark | text | Thread text |
-| LINE → Lark | JPEG/PNG/image | Lark image; R2 fallback link when direct upload cannot be used |
-| LINE → Lark | PDF/file | Lark file when within safe bridge size; explicit warning for oversized file |
-| LINE → Lark | audio | Lark message file/audio representation |
+| LINE → Lark | JPEG/PNG/image | upload directly to the Case Thread as a Lark image; Lark file fallback if native image upload fails |
+| LINE → Lark | PDF/file | upload directly to the Case Thread when within the safe bridge size; explicit warning for oversized file |
+| LINE → Lark | audio | upload directly to the Case Thread as a Lark file/audio representation |
 | LINE → Lark | location | text + map link |
 | LINE → Lark | sticker | safe textual representation |
 | Lark → LINE | text | native LINE text |
-| Lark → LINE | JPEG/PNG | native LINE image when compatible; R2 link fallback otherwise |
-| Lark → LINE | PDF/file | HTTPS R2 download link because LINE Messaging API has no general outbound file message type |
-| Lark → LINE | compatible MP3/M4A audio | native LINE audio; R2 link fallback for incompatible formats such as Opus |
+| Lark → LINE | compatible JPEG/PNG | native LINE image using an expiring Worker HTTPS proxy URL backed by the Lark message resource |
+| Lark → LINE | PDF/file | HTTPS Worker proxy link backed by the Lark message resource because LINE Messaging API has no general outbound file message type |
+| Lark → LINE | compatible MP3/M4A audio | native LINE audio using the Lark-backed Worker proxy URL; incompatible audio uses an HTTPS proxy link |
 | Lark → LINE | location with coordinates | native LINE location |
 | Lark → LINE | sticker | textual fallback because Lark/LINE sticker IDs/resources are not interoperable |
 
-These fallback mappings are intentional platform-compatibility behavior, not silent data loss.
+For Lark → LINE media, D1 `media_assets` stores only expiring authorization metadata plus an opaque Lark message-resource locator. `/assets/media/<token>` validates the D1 record and retrieves the bytes from Lark on demand. The file itself remains stored in Lark.
+
+If LINE → Lark media delivery fails after the Lark-native fallback path, the Queue retry/DLQ policy handles the failure; the product does not silently create a second object-storage copy.
 
 ## 4. Final Cloudflare resources — create once
 
 Provision the resources listed by `deploy/product-manifest.json`:
 - Worker
 - D1 database
-- R2 bucket
 - Queue
 - DLQ
 - Workers AI binding `AI` if AI inference is desired
+
+R2 is not a required product resource for release 0.3.0.
 
 Apply D1 migrations **once and exactly in manifest order**:
 1. `migrations/0001_operational_state.sql`
 2. `migrations/0002_srs_media_and_campaign_observability.sql`
 
-The shared Queue carries inbound LINE jobs and confirmed asynchronous CRM Campaign dispatch jobs. Campaign delivery therefore does not depend on a long Lark callback `waitUntil()` window.
+The shared project Queue carries inbound LINE jobs and confirmed asynchronous CRM Campaign dispatch jobs. Campaign delivery therefore does not depend on a long Lark callback `waitUntil()` window.
 
-R2 is used only for expiring bridge media assets. D1 `media_assets` metadata authorizes `/assets/media/<token>` access until expiry.
+D1 holds technical state including event/action dedupe, atomic claim/routing state, drafts, QR metadata, campaign state, and expiring media-proxy metadata. It is not a customer-facing CRM database.
 
 Text AI defaults to `@cf/meta/llama-3.1-8b-instruct-fast`. Vision defaults to `@cf/meta/llama-3.2-11b-vision-instruct`. Text falls back to deterministic rules if Workers AI is unavailable; image analysis falls back to a safe generic image state.
 
@@ -136,7 +141,7 @@ Configure PromptPay target type:
 
 `PUBLIC_BASE_URL` must be the final public HTTPS Worker base URL because LINE fetches:
 - PromptPay QR: `/assets/qr/<token>.png`
-- bridge media: `/assets/media/<token>`
+- Lark-backed bridge media: `/assets/media/<token>`
 
 The readiness validator rejects an invalid PromptPay target/type pair before E2E.
 
@@ -168,7 +173,7 @@ Optional/default vars:
 - `COMPANY_NAME`
 - `QUOTE_DEFAULT_VAT_RATE` default `7`
 - `QR_TTL_SECONDS` default `604800`
-- `MEDIA_TTL_SECONDS` default `604800`
+- `MEDIA_TTL_SECONDS` default `604800` — lifetime of the expiring Lark-resource proxy token
 - `VIP_GOLD_MIN_THB` — business threshold; leave blank if not decided
 - `VIP_DIAMOND_MIN_THB` — business threshold; leave blank if not decided
 - `AI_TEXT_MODEL`
@@ -176,11 +181,10 @@ Optional/default vars:
 
 Bindings:
 - `DB` = D1
-- `MEDIA_BUCKET` = R2
-- `LINE_EVENTS_QUEUE` = shared Queue producer
+- `LINE_EVENTS_QUEUE` = project Queue producer
 - `AI` = Workers AI, optional but recommended
 
-Use `wrangler.jsonc.example` as template. Do not commit real secrets.
+There is no `MEDIA_BUCKET` binding. Use `wrangler.jsonc.example` as the template and do not commit real secrets or installation IDs.
 
 ## 7. Deployment readiness gate
 
@@ -197,7 +201,7 @@ Expected ready state:
 Blocking configuration produces HTTP `503` with safe `code`, `key`, and `message` fields. The endpoint does **not** return secret values.
 
 The validator blocks common installation mistakes including:
-- missing required secrets/vars/bindings
+- missing required secrets/vars/D1/Queue bindings
 - obvious example/placeholder Lark/Base/public URL values
 - non-HTTPS or malformed `PUBLIC_BASE_URL`
 - PromptPay target/type mismatch
@@ -217,14 +221,14 @@ There is no later environment promotion step.
 
 Run in this order so each failure has a narrow root cause:
 
-1. `/health` is HTTP 200 with `configuration.ready=true`.
+1. `/health` is HTTP 200 with `configuration.ready=true` and no R2 binding is present/required.
 2. LINE text → one blue root Case Card + Thread message.
 3. Burst several first messages from one LINE user → still exactly one active Case/root Card.
 4. Two Sales attempt Claim → one atomic winner; same Card turns green.
 5. Owner replies in Thread → LINE receives it.
 6. Specialist/Manager replies in the same Thread → LINE receives it; MESSAGE audit shows actual responder while Case Owner remains unchanged.
 7. Human types in Sales Inbox root chat → **no LINE outbound** + orange Thread warning.
-8. Test LINE → Lark and Lark → LINE image, PDF/file, audio, location and sticker/fallback behavior.
+8. Test LINE → Lark and Lark → LINE image, PDF/file, audio, location and sticker/fallback behavior. For Lark-origin media, verify `/assets/media/<token>` serves bytes from the Lark message resource via D1 authorization and does not depend on R2.
 9. Quote form → Preview → Confirm → verify `Sales_Deals` snapshot exists **before** LINE Flex delivery and Customer becomes `📄 Quotation Sent`.
 10. QR → amount prefilled from persisted Deal → Preview → Confirm → verify high-resolution PromptPay PNG + `payment_status`.
 11. Customer sends payment-slip image → AI/payment state surfaces in Thread/Card.

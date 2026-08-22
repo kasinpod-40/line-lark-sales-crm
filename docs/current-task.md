@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / MEDIA ARCHITECTURE CHANGED TO LARK-FIRST WITH D1-BACKED EXPIRING PROXY METADATA / R2 IS NO LONGER REQUIRED / SOURCE CHANGE IS BEING VERIFIED BY EXACT-HEAD CI / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE IN CODE / R2 NO LONGER REQUIRED / EXACT CODE HEAD CI SUCCESS 74/74 / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED / NEXT STEP IS LOCAL WRANGLER + LARK APP/BOT/SALES INBOX CONFIG, THEN FIRST DEPLOY AND `/health`.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -75,6 +75,7 @@ Verified live state:
 - dedicated D1 created successfully in APAC
 - dedicated Queue created successfully
 - dedicated DLQ created successfully
+- D1 migrations are fully applied
 - Queue/DLQ have no producer/consumer yet because Worker has not been deployed
 - Worker does not yet exist
 - account-level R2 returns code `10042`, but this is no longer a deployment blocker because R2 has been removed from the required architecture
@@ -115,21 +116,32 @@ Media behavior:
 - `MEDIA_TTL_SECONDS` remains as the expiring proxy-token lifetime; it no longer describes R2 object retention.
 - D1 remains the authority for atomic claim, webhook/action dedupe, route state, drafts, QR metadata, campaign state and expiring media-proxy metadata.
 
-## Source change awaiting CI
+## Exact code verification — complete
 
-A source/config/test change removes the R2 runtime dependency and makes Lark message resources the bridge media authority.
+Latest code/config/test-bearing verified SHA:
+`fc9d33e81281640d232f893bbf5927c84ab247e7`
 
-Changed areas include:
+GitHub CI:
+- run `32583000911` / run #192
+- job `97055062250`
+- result: **SUCCESS**
+- dependencies: 121 packages added / 122 audited / **0 vulnerabilities**
+- TypeScript strict typecheck: **PASS**
+- unit/contract tests: **74/74 PASS**
+- Wrangler `4.125.0` deploy dry-run: **PASS**
+- dry-run upload: 6144.07 KiB / gzip 536.71 KiB
+
+Verified source changes:
 - `Env` no longer requires `MEDIA_BUCKET`
 - readiness no longer blocks on R2
 - `MediaAssetService` stores Lark resource locators in D1 instead of media bytes in R2
 - public media route proxies authorized Lark resources
 - LINE → Lark no longer uses R2 fallback
 - Lark → LINE uses the Lark-backed proxy URL
-- canonical manifest and Wrangler example no longer contain R2 binding
+- canonical manifest and Wrangler example contain no R2 binding
 - tests cover no-R2 readiness and Lark media-locator encoding
 
-Exact source HEAD must pass CI before any Worker deployment or callback mutation.
+No Worker deployment or external callback mutation was performed by this code change.
 
 ## Terminal operator-safety rule — locked
 
@@ -149,15 +161,14 @@ PM/customer installations use the same verified release and resource pattern. Cu
 
 ## Next work
 
-1. Require exact-head GitHub CI for the Lark-first/no-R2 source change; do not deploy before it is green.
-2. Update local untracked `wrangler.jsonc` to remove any R2 binding and retain dedicated D1 + Queue/DLQ + optional AI.
-3. Configure/verify owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep callbacks disabled.
-4. Complete local Lark Base/Sales Inbox vars.
-5. Put the six required secrets with Wrangler locally; never paste secret values into chat or source. Add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
-6. Deploy dedicated Worker `line-lark-sales-crm` after CI success.
-7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling LINE/Lark callbacks.
-8. Run controlled E2E including Lark-backed image/file/audio proxy behavior and confirm there is no R2 dependency.
-9. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
+1. Update local untracked `wrangler.jsonc` to match `wrangler.jsonc.example`: remove any R2 binding and retain dedicated D1 + Queue/DLQ + optional AI.
+2. Configure/verify owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep callbacks disabled.
+3. Complete local Lark Base/Sales Inbox vars.
+4. Put the six required secrets with Wrangler locally; never paste secret values into chat or source. Add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
+5. Deploy dedicated Worker `line-lark-sales-crm` for the first time.
+6. Require `/health` HTTP 200 with `configuration.ready=true` before enabling LINE/Lark callbacks.
+7. Run controlled E2E including Lark-backed image/file/audio proxy behavior and confirm there is no R2 dependency.
+8. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
 
 ## Handoff read order
 
