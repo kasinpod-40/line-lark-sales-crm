@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { isNoOpMutationFailure, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
+import { isNoOpMutationFailure, readbackDesiredForViewProperty, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaContract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-contract.json"), "utf8"));
@@ -147,6 +147,15 @@ function listDashboardBlocks(baseToken, dashboardId) {
   return blockMap(runLark(["base", "+dashboard-block-list", "--base-token", baseToken, "--dashboard-id", dashboardId, "--page-size", "100"], `List dashboard blocks ${dashboardId}`));
 }
 
+function fieldIdsByName(fields, tableName) {
+  const ids = {};
+  for (const [name, meta] of fields.entries()) {
+    if (!meta.id) throw new Error(`Field ${tableName}.${name} exists but current Lark CLI returned no id/field_id`);
+    ids[name] = meta.id;
+  }
+  return ids;
+}
+
 function expectedFieldNames(tableName) {
   const table = schemaContract.tables.find((item) => item.name === tableName);
   if (!table) throw new Error(`UX contract references unknown table ${tableName}`);
@@ -199,12 +208,12 @@ function getViewProperty(baseToken, table, viewName, property) {
   ], `Read ${property} ${table}.${viewName}`);
 }
 
-function reconcileViewProperty(baseToken, table, viewName, property, desired) {
+function reconcileViewProperty(baseToken, table, viewName, property, desired, readbackDesired = desired) {
   const commands = viewPropertyCommands[property];
   if (!commands) throw new Error(`Unsupported view property reconcile: ${property}`);
 
   const before = getViewProperty(baseToken, table, viewName, property);
-  if (viewPropertyMatches(before, desired)) return { changed: 0, unchanged: 1, noOpRecovered: 0 };
+  if (viewPropertyMatches(before, readbackDesired)) return { changed: 0, unchanged: 1, noOpRecovered: 0 };
 
   const result = runLarkMutation([
     "base", commands.set,
@@ -215,7 +224,10 @@ function reconcileViewProperty(baseToken, table, viewName, property, desired) {
   ], `Set ${property} ${table}.${viewName}`);
 
   const after = getViewProperty(baseToken, table, viewName, property);
-  if (!viewPropertyMatches(after, desired)) {
+  if (!viewPropertyMatches(after, readbackDesired)) {
+    if (result?.no_op === true) {
+      throw new Error(`Lark reported no-op for ${property} ${table}.${viewName}, but readback did not match the desired state`);
+    }
     throw new Error(`Readback mismatch after setting ${property} ${table}.${viewName}; current state does not contain the requested configuration`);
   }
   return {
@@ -231,12 +243,21 @@ function mergePropertyStats(target, result) {
   target.no_op_recovered += result.noOpRecovered;
 }
 
-function setViewConfig(baseToken, table, view) {
+function setViewConfig(baseToken, table, view, fieldIds) {
   const stats = { changed: 0, unchanged: 0, no_op_recovered: 0 };
-  if (view.visible_fields) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", { visible_fields: view.visible_fields }));
-  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter));
-  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group));
-  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort));
+  if (view.visible_fields) {
+    const desired = { visible_fields: view.visible_fields };
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", desired, readbackDesiredForViewProperty("visible_fields", desired, fieldIds)));
+  }
+  if (view.filter) {
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter));
+  }
+  if (view.group) {
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group, readbackDesiredForViewProperty("group", view.group, fieldIds)));
+  }
+  if (view.sort) {
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort, readbackDesiredForViewProperty("sort", view.sort, fieldIds)));
+  }
   return stats;
 }
 
@@ -250,6 +271,7 @@ function reconcileViews(baseToken) {
   let deleted = 0;
   const properties = { changed: 0, unchanged: 0, no_op_recovered: 0 };
   for (const tableContract of uxContract.tables) {
+    const fieldIds = fieldIdsByName(listFields(baseToken, tableContract.name), tableContract.name);
     let existing = listViews(baseToken, tableContract.name);
     const desiredNames = new Set(tableContract.views.map((view) => view.name));
     const first = tableContract.views[0];
@@ -267,7 +289,7 @@ function reconcileViews(baseToken) {
         created += 1;
         existing = listViews(baseToken, tableContract.name);
       }
-      const result = setViewConfig(baseToken, tableContract.name, view);
+      const result = setViewConfig(baseToken, tableContract.name, view, fieldIds);
       properties.changed += result.changed;
       properties.unchanged += result.unchanged;
       properties.no_op_recovered += result.no_op_recovered;
