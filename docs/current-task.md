@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX CONTRACT COMPLETE / LARK LIST-PARSER + VIEW IDEMPOTENCY RECOVERY VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE EXISTING BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX CONTRACT COMPLETE / LARK LIST-PARSER + IDEMPOTENCY + EVENTUAL-CONSISTENCY RECOVERY VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE EXISTING BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local work and GitHub CI are verification gates only.
 
@@ -40,6 +40,7 @@ Canonical assets:
 - `scripts/provision-lark-base-ux.mjs`
 - `scripts/lark-cli-idempotency.mjs`
 - `scripts/lark-cli-resource-list.mjs`
+- `scripts/lark-eventual-reconcile.mjs`
 - `docs/lark-base-schema.md`
 - `docs/lark-base-provisioning.md`
 - `docs/lark-base-ux.md`
@@ -55,7 +56,7 @@ Confirmed runtime schema state:
 - `Chat_Tracking` created
 - `Sales_Deals` created
 - required fields, links/backlinks and deferred formulas verified
-- final apply returned `ok=true`
+- final schema apply returned `ok=true`
 - concrete personal Base/table IDs remain installation configuration and are not committed to source
 
 Two real schema integration mismatches were fixed before this success:
@@ -98,13 +99,12 @@ Fix verified:
 - map contract field names → current target Base field IDs for readback comparison
 - skip writes whose persisted state already matches
 - recognize the official persisted-state `no operation produced` response only on idempotent view-property mutations
-- immediately read back after a write/no-op and require the target state to match before continuing
 - preserve array order for visible fields and sort/group definitions
 - resume from the partially applied Base; no Base/table recreation and no rollback of successful view work
 
 ### Real UX integration incident 2 — nested select option misclassified as field — CLOSED IN CODE
 
-The next resume stopped with:
+A later resume stopped with:
 
 ```text
 Field Customers.🔥 Hot Lead exists but current Lark CLI returned no id/field_id
@@ -115,11 +115,31 @@ Field Customers.🔥 Hot Lead exists but current Lark CLI returned no id/field_i
 Fix verified:
 - list parsing now selects only the official resource collection returned by the current CLI (`tables[]`, `fields[]`, `views[]`, or the nearest dashboard/block `items[]` collection)
 - nested Select options and nested metadata are never promoted into field/table/view/dashboard resource maps
-- field-ID lookup now iterates only the schema-contract field names, never arbitrary nested names
-- regression test includes a real-shaped `lead_quality` Select containing `🔥 Hot Lead` / `🟡 Warm Lead` options and proves neither becomes a field
-- the same collection-aware parser is reused for tables, fields, views, dashboards and dashboard blocks to prevent this error class from resurfacing in another resource type
+- field-ID lookup iterates only schema-contract field names
+- regression tests cover real-shaped Select options
+- the same collection-aware parser is reused for tables, fields, views, dashboards and dashboard blocks
 
-Both UX failures were provisioner compatibility/parser defects, not Base corruption and not user setup errors.
+### Real UX integration incident 3 — immediate read-after-write against asynchronous Lark state — CLOSED IN CODE
+
+The next resume stopped with:
+
+```text
+Readback mismatch after setting visible_fields Customers.👥 ลูกค้าทั้งหมด
+```
+
+Official current Lark Base guidance states that many Table/View updates are applied asynchronously and an immediate read can still return the previous state. The provisioner was incorrectly treating that temporary stale read as a permanent failure.
+
+Fix verified:
+- successful writes are no longer followed by an immediate fatal readback
+- reconciliation reads once before a write to skip already-matching state, then performs the write without assuming instant visibility
+- final acceptance uses bounded eventual-consistency polling with backoff until Lark state converges
+- View create/rename/delete visibility is also polled rather than assumed immediate
+- Dashboard and Dashboard Block creation use the same eventual-consistency wait path proactively, preventing the same failure class later in the run
+- no-op responses remain recoverable, but final persisted state is still verified before the table is accepted
+- final mismatch errors now include bounded diagnostic expected/actual payloads only after retries are exhausted
+- regression tests prove no immediate stale read occurs after write and that stale reads can converge across retries
+
+These UX failures were provisioner compatibility defects, not Base corruption and not user setup errors.
 
 ### Table icons
 
@@ -133,15 +153,15 @@ Current supported Lark Base v3 table update / official `lark-cli` do not expose 
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`93d062a4b5444b44b2417777eb11f73955f3ee34`
+`66f0765e3f5f82ce2de289abc2fa1a8e4223fed4`
 
 GitHub CI:
-- run `32563324140` / run #145
-- job `97008165325`
+- run `32563597101` / run #149
+- job `97008842509`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **56/56 PASS**
+- unit/contract tests: **60/60 PASS**
 - Wrangler `4.125.0` deploy dry-run bundle: **PASS**
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may point back to the exact verified code SHA above.
@@ -194,8 +214,8 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull the branch containing verified code SHA `93d062a4b5444b44b2417777eb11f73955f3ee34` or a later documentation-only head containing it.
-2. Rerun `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the **same existing personal golden Base**. The run must resume/skip already-persisted view state and ignore nested Select option metadata.
+1. Pull the branch containing verified code SHA `66f0765e3f5f82ce2de289abc2fa1a8e4223fed4` or a later documentation-only head containing it.
+2. Rerun `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the **same existing personal golden Base**. The run must resume/skip already-persisted state and tolerate asynchronous Lark read visibility.
 3. Verify all 22 curated views and both dashboards materialize without leftover default/localized views.
 4. Apply the three locked Table sidebar icons manually in Lark UI only because the supported API has no icon setter.
 5. Keep Events/Callbacks disabled until the existing Cloudflare stack is configured and `/health` returns HTTP 200 with `configuration.ready=true`.
