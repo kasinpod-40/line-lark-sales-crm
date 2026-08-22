@@ -6,7 +6,7 @@ import {
   buildCloseDealConfirmCard,
   buildThreadGuardWarningCard,
 } from "../providers/lark/lark.cards";
-import { LarkClient } from "../providers/lark/lark.client";
+import { LarkClient, LarkResourceTooLargeError } from "../providers/lark/lark.client";
 import {
   lineText,
   pushLineMessages,
@@ -99,8 +99,7 @@ export class LarkEventService {
       const duration = Math.max(0, asNumber(event.content.duration, 0));
       const lineAudioCompatible = event.messageType === "audio"
         && duration > 0
-        && ["audio/mpeg", "audio/mp4", "audio/x-m4a"].includes(resource.mime_type)
-        && resource.size_bytes <= 200 * 1024 * 1024;
+        && ["audio/mpeg", "audio/mp4", "audio/x-m4a"].includes(resource.mime_type);
       if (lineAudioCompatible) {
         const message: LineAudioMessage = { type: "audio", originalContentUrl: stored.url, duration };
         await pushLineMessages(this.env, lineUserId, [message], await stableUuid(`line-media:${event.messageId}`));
@@ -127,7 +126,7 @@ export class LarkEventService {
     }
 
     if (event.messageType === "sticker") {
-      // Lark and LINE sticker IDs are not interoperable. Preserve the event safely as text.
+      // Lark and LINE sticker identifiers/resources are not interoperable.
       await pushLineMessages(this.env, lineUserId, [lineText("🧩 ทีมงานส่งสติกเกอร์ใน Lark")], await stableUuid(`line-sticker:${event.messageId}`));
       return;
     }
@@ -221,13 +220,22 @@ export class LarkEventService {
           await stableUuid(`line-reply:${event.messageId}`),
         );
       } else if (["image", "file", "audio", "location", "sticker"].includes(event.messageType)) {
-        await this.sendMediaToLine(event, route.case_id, route.line_user_id);
+        try {
+          await this.sendMediaToLine(event, route.case_id, route.line_user_id);
+        } catch (error) {
+          if (!(error instanceof LarkResourceTooLargeError)) throw error;
+          await this.lark.replyText(event.rootMessageId, `⚠️ ไฟล์นี้ไม่ได้ส่งไป LINE: ${error.message}`);
+          await this.operational.completeEvent(eventKey);
+          return;
+        }
       } else {
         await this.lark.replyText(event.rootMessageId, `ℹ️ ข้อความชนิด ${event.messageType} ยังไม่มี mapping ไป LINE และไม่ได้ถูกส่ง`);
         await this.operational.completeEvent(eventKey);
         return;
       }
 
+      // First Response is recorded only after an outbound LINE API request was
+      // accepted/recovered as accepted. Oversized/unsupported media never counts.
       const updatedRoute = await this.operational.markFirstResponse(route.case_id, event.occurredAt || Date.now());
       await this.base.createMessageTracking({
         tracking_id: `lark:${event.messageId}`,
