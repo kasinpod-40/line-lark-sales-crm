@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / ALL 22 VIEW VISIBILITY MEMBERSHIPS NOW CORRECT / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / BASE JS SDK RUNNER FIX VERIFIED TO STOP RETRYING UNSUPPORTED ORDER MUTATIONS / NEXT STEP IS RESTART THE EXISTING LOCAL EXTENSION SERVER, RE-RUN VISIBLE-FIELD READBACK, THEN DO THE REMAINING MANUAL PRESENTATION ORDER + TABLE ICON PASS.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / ALL 22 VIEW VISIBILITY MEMBERSHIPS PROVEN CORRECT / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / BASE JS SDK RUNNER NOW HANDLES EXTENSION-FRAME TABLE-CONTEXT READINESS WITH BOUNDED CANONICAL TABLE RESOLUTION / NEXT STEP IS RESTART THE EXISTING LOCAL EXTENSION SERVER, RE-RUN VISIBLE-FIELD READBACK, THEN DO THE REMAINING MANUAL PRESENTATION ORDER + TABLE ICON PASS.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -109,14 +109,23 @@ Therefore the runner now has two separate correctness dimensions:
 1. **Visibility membership** — automated and required for `ok=true`.
 2. **Column order** — read and reported separately; order-only drift is `MANUAL_UI_PASS_REQUIRED`, not a failed visibility mutation.
 
-The fixed runner now:
+The fixed runner:
 - performs minimal membership reconciliation only (hide excess + show missing)
 - never re-hides/re-shows a View just because its order differs
 - reports `membership_views`, `ordered_views`, `order_manual_views`, `order_mismatches`
 - returns a membership success when all requested visible fields are present and no extras remain
 - preserves fail-closed behavior for a real membership mismatch or missing/unsupported resource
 
-The next live rerun should therefore require `membership_views=22`, `failures=[]`, and should report the remaining order-only Views separately instead of looping.
+## Base JS SDK Extension-frame context readiness
+
+After restarting the local Extension server, one live rerun returned `Missing Table: Customers` even though the same Base had already produced the complete 22-View evidence moments earlier. The old runner used a single eager `getTableMetaList()` snapshot and immediately converted a transient/reconnecting SDK frame into a false missing-table failure.
+
+The runner now follows the documented canonical resolver path instead:
+- each required business table is resolved with `base.getTableByName(<canonical_name>)`
+- resolution is retried boundedly (8 reads with short backoff) before failure
+- `getTableMetaList()` is no longer the correctness authority for the initial table lookup
+- if resolution still fails, the error includes available table names, current selection table ID, active table name, and the last resolver error so a genuinely wrong Base context is distinguishable from SDK-frame readiness
+- this path is read-only for Base/Table structure; it does not create, rename, delete, or mutate tables
 
 ## Live filter readback arity normalization
 
@@ -148,18 +157,20 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`8e7d8c4b4c4df38c75d91d6b10846d0d48b28163`
+`d3b0e81721927822446d27709c27fdecd3ed34f8`
 
 GitHub CI:
-- run `32568448190` / run #180
-- job `97020383825`
+- run `32569627647` / run #183
+- job `97023147077`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **71/71 PASS**
+- unit/contract tests: **72/72 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-Regression coverage now locks that the Base JS SDK runner reconciles visibility membership separately from unsupported order-only drift and does not repeatedly mutate already-correct membership.
+Regression coverage locks both:
+- visibility membership vs unsupported order-only drift
+- canonical table resolution with bounded Base JS SDK context-readiness retries and actionable wrong-Base diagnostics
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -188,14 +199,15 @@ Phase C customer sale:
 
 ## Next work
 
-1. Stop the old local `lark:base:ux:visible-ui` server if it is still running, pull the branch head containing verified code SHA `8e7d8c4b4c4df38c75d91d6b10846d0d48b28163` (or a later docs-only commit containing it), then restart the same server.
-2. Reopen/refresh the existing Base Extension and run **Apply visible fields** once. Require `ok=true`, `membership_views=22`, `failures=[]`; order-only differences must appear only under `order_mismatches` / `order_manual_views`.
-3. Do not rerun visibility mutation to chase order-only differences. Apply the remaining View column order in the Lark UI because the documented SDK exposes no order setter.
-4. Apply the three locked table icons manually in Lark UI.
-5. Visually inspect all 22 curated Views and both Dashboards.
-6. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
-7. Configure secrets/vars, enable callbacks, then run controlled E2E.
-8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Stop the old local `lark:base:ux:visible-ui` server if it is still running, pull the branch head containing verified code SHA `d3b0e81721927822446d27709c27fdecd3ed34f8` (or a later docs-only commit containing it), then restart the same server.
+2. Reopen/refresh the existing Extension from inside the golden Base and run **Apply visible fields** once. Require `ok=true`, `membership_views=22`, `failures=[]`; order-only differences must appear only under `order_mismatches` / `order_manual_views`.
+3. If the Base context still cannot resolve after bounded retries, use the emitted `available_tables`, `selection_table_id`, and `active_table` diagnostics; do not recreate the Base.
+4. Do not rerun visibility mutation to chase order-only differences. Apply the remaining View column order in the Lark UI because the documented SDK exposes no order setter.
+5. Apply the three locked table icons manually in Lark UI.
+6. Visually inspect all 22 curated Views and both Dashboards.
+7. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
+8. Configure secrets/vars, enable callbacks, then run controlled E2E.
+9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
