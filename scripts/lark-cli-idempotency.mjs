@@ -31,28 +31,48 @@ function collectValues(value, out = []) {
   return out;
 }
 
-export function viewPropertyMatches(payload, expected) {
-  const unwrapValue = expected && typeof expected === "object" && !Array.isArray(expected) && Object.keys(expected).length === 1
-    ? expected[Object.keys(expected)[0]]
+function fieldIdToNameMap(fieldIdsByName) {
+  const reverse = new Map();
+  for (const [name, id] of Object.entries(fieldIdsByName || {})) {
+    if (typeof id === "string" && id.trim()) reverse.set(id.trim(), name);
+  }
+  return reverse;
+}
+
+export function canonicalizeViewFieldReferences(value, fieldIdsByName = {}) {
+  const reverse = fieldIdToNameMap(fieldIdsByName);
+
+  function visit(current) {
+    if (typeof current === "string") return reverse.get(current) || current;
+    if (Array.isArray(current)) return current.map(visit);
+    if (current && typeof current === "object") {
+      return Object.fromEntries(Object.entries(current).map(([key, child]) => [key, visit(child)]));
+    }
+    return current;
+  }
+
+  return visit(value);
+}
+
+export function viewPropertyMatches(payload, expected, fieldIdsByName = {}) {
+  const canonicalPayload = canonicalizeViewFieldReferences(payload, fieldIdsByName);
+  const canonicalExpected = canonicalizeViewFieldReferences(expected, fieldIdsByName);
+  const unwrapValue = canonicalExpected && typeof canonicalExpected === "object" && !Array.isArray(canonicalExpected) && Object.keys(canonicalExpected).length === 1
+    ? canonicalExpected[Object.keys(canonicalExpected)[0]]
     : undefined;
 
-  for (const candidate of collectValues(payload)) {
-    if (deepContains(candidate, expected)) return true;
+  for (const candidate of collectValues(canonicalPayload)) {
+    if (deepContains(candidate, canonicalExpected)) return true;
     if (unwrapValue !== undefined && deepContains(candidate, unwrapValue)) return true;
   }
   return false;
 }
 
-function resolveFieldId(fieldIdsByName, fieldName) {
-  const id = fieldIdsByName?.[fieldName];
-  if (typeof id !== "string" || !id.trim()) throw new Error(`Missing Lark field id for ${fieldName}`);
-  return id.trim();
-}
-
-export function readbackDesiredForViewProperty(property, desired, fieldIdsByName) {
-  // Current Lark Base visible_fields readback resolves persisted field references
-  // back to canonical field names. Keep names here instead of converting them to IDs.
-  // Group/sort readbacks still use field IDs in current CLI/API responses.
+export function readbackDesiredForViewProperty(property, desired) {
+  // Current Lark CLI accepts canonical field names on writes and live readback can
+  // return those names for visible_fields/group/sort. Keep the expected contract
+  // in name form. viewPropertyMatches canonicalizes any fld... IDs returned by an
+  // alternate/older response shape back to these same names before comparison.
   if (property === "visible_fields") {
     return {
       visible_fields: [...(desired.visible_fields || [])],
@@ -60,18 +80,12 @@ export function readbackDesiredForViewProperty(property, desired, fieldIdsByName
   }
   if (property === "group") {
     return {
-      group_config: (desired.group_config || []).map((item) => ({
-        ...item,
-        field: resolveFieldId(fieldIdsByName, item.field),
-      })),
+      group_config: (desired.group_config || []).map((item) => ({ ...item })),
     };
   }
   if (property === "sort") {
     return {
-      sort_config: (desired.sort_config || []).map((item) => ({
-        ...item,
-        field: resolveFieldId(fieldIdsByName, item.field),
-      })),
+      sort_config: (desired.sort_config || []).map((item) => ({ ...item })),
     };
   }
   return desired;
