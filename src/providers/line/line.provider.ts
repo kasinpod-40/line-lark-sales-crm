@@ -24,11 +24,19 @@ export interface LineStickerMessage { type: "sticker"; packageId: string; sticke
 export type LineOutboundMessage = LineTextMessage | LineFlexMessage | LineImageMessage | LineAudioMessage | LineLocationMessage | LineStickerMessage;
 
 const LINE_USER_ID_PATTERN = /^U[0-9a-f]{32}$/i;
+const DEFAULT_BRIDGE_DOWNLOAD_LIMIT = 25 * 1024 * 1024;
 
 export class LineApiError extends Error {
   constructor(public readonly status: number, public readonly path: string, message: string) {
     super(message);
     this.name = "LineApiError";
+  }
+}
+
+export class LineContentTooLargeError extends Error {
+  constructor(public readonly max_bytes: number) {
+    super(`LINE content exceeds bridge memory limit (${Math.round(max_bytes / 1024 / 1024)} MB)`);
+    this.name = "LineContentTooLargeError";
   }
 }
 
@@ -48,6 +56,39 @@ function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
   let difference = 0;
   for (let index = 0; index < left.length; index += 1) difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
   return difference === 0;
+}
+
+async function readResponseWithLimit(response: Response, maxBytes: number): Promise<ArrayBuffer> {
+  const declared = Number(response.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > maxBytes) throw new LineContentTooLargeError(maxBytes);
+  if (!response.body) return new ArrayBuffer(0);
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("bridge content limit exceeded").catch(() => undefined);
+        throw new LineContentTooLargeError(maxBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged.buffer;
 }
 
 export async function verifyLineWebhookSignature(rawBody: string, receivedSignature: string, channelSecret: string): Promise<boolean> {
@@ -83,24 +124,31 @@ export async function getLineUserProfile(env: Env, userId: string): Promise<Line
   };
 }
 
-export async function downloadLineMessageContent(env: Env, messageId: string): Promise<DownloadedLineContent> {
+export async function downloadLineMessageContent(
+  env: Env,
+  messageId: string,
+  maxBytes = DEFAULT_BRIDGE_DOWNLOAD_LIMIT,
+): Promise<DownloadedLineContent> {
   const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: `Bearer ${accessToken(env)}` } });
   if (!response.ok) {
     const bodyText = await response.text();
     throw new LineApiError(response.status, "/v2/bot/message/{id}/content", `LINE content error: ${response.status} ${bodyText.slice(0, 500)}`);
   }
-  const bytes = await response.arrayBuffer();
+  const bytes = await readResponseWithLimit(response, Math.max(1024, maxBytes));
   if (bytes.byteLength === 0) throw new Error("LINE content is empty");
   const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
   return { bytes, mime_type: mimeType, size_bytes: bytes.byteLength };
 }
 
-export async function downloadExternalContent(url: string): Promise<DownloadedLineContent> {
+export async function downloadExternalContent(
+  url: string,
+  maxBytes = DEFAULT_BRIDGE_DOWNLOAD_LIMIT,
+): Promise<DownloadedLineContent> {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") throw new Error("External LINE content URL must use HTTPS");
   const response = await fetch(parsed.toString(), { redirect: "follow" });
   if (!response.ok) throw new Error(`External content error: ${response.status}`);
-  const bytes = await response.arrayBuffer();
+  const bytes = await readResponseWithLimit(response, Math.max(1024, maxBytes));
   if (!bytes.byteLength) throw new Error("External content is empty");
   const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
   return { bytes, mime_type: mimeType, size_bytes: bytes.byteLength };
