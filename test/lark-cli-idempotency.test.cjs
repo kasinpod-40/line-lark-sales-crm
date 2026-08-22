@@ -73,14 +73,52 @@ test('view property matcher accepts live visible_fields response under data wrap
   }), true);
 });
 
+test('view property matcher accepts live group response under data wrapper using field names', async () => {
+  const { viewPropertyMatches } = await loadHelpers();
+  const payload = {
+    ok: true,
+    identity: 'user',
+    data: {
+      group: [{ desc: false, field: 'customer_stage' }]
+    }
+  };
+  assert.equal(viewPropertyMatches(payload, {
+    group_config: [{ field: 'customer_stage', desc: false }]
+  }), true);
+});
+
+test('view property matcher canonicalizes legacy or alternate field IDs back to contract names', async () => {
+  const { viewPropertyMatches } = await loadHelpers();
+  const ids = {
+    customer_stage: 'fld_stage',
+    updated_at: 'fld_updated'
+  };
+  assert.equal(
+    viewPropertyMatches(
+      { ok: true, group: [{ field: 'fld_stage', desc: false }] },
+      { group_config: [{ field: 'customer_stage', desc: false }] },
+      ids
+    ),
+    true
+  );
+  assert.equal(
+    viewPropertyMatches(
+      { ok: true, sort: [{ field: 'fld_updated', desc: true }] },
+      { sort_config: [{ field: 'updated_at', desc: true }] },
+      ids
+    ),
+    true
+  );
+});
+
 test('view property readback matcher accepts nested filter/group/sort envelopes from current CLI', async () => {
   const { viewPropertyMatches } = await loadHelpers();
   assert.equal(viewPropertyMatches({ ok: true, filter: { logic: 'and', conditions: [['hot_lead', '==', true]] } }, { logic: 'and', conditions: [['hot_lead', '==', true]] }), true);
-  assert.equal(viewPropertyMatches({ ok: true, group: [{ field: 'fld_stage', desc: false }] }, { group_config: [{ field: 'fld_stage', desc: false }] }), true);
-  assert.equal(viewPropertyMatches({ ok: true, sort: [{ field: 'fld_updated', desc: true }] }, { sort_config: [{ field: 'fld_updated', desc: true }] }), true);
+  assert.equal(viewPropertyMatches({ ok: true, group: [{ field: 'customer_stage', desc: false }] }, { group_config: [{ field: 'customer_stage', desc: false }] }), true);
+  assert.equal(viewPropertyMatches({ ok: true, sort: [{ field: 'updated_at', desc: true }] }, { sort_config: [{ field: 'updated_at', desc: true }] }), true);
 });
 
-test('readback desired preserves visible field names while mapping group and sort to current field IDs', async () => {
+test('readback desired keeps visible, group and sort field references in canonical name form', async () => {
   const { readbackDesiredForViewProperty } = await loadHelpers();
   const ids = {
     customer_id: 'fld_customer',
@@ -94,10 +132,10 @@ test('readback desired preserves visible field names while mapping group and sor
   );
   assert.deepEqual(
     readbackDesiredForViewProperty('group', { group_config: [{ field: 'customer_stage', desc: false }] }, ids),
-    { group_config: [{ field: 'fld_stage', desc: false }] }
+    { group_config: [{ field: 'customer_stage', desc: false }] }
   );
   assert.deepEqual(
     readbackDesiredForViewProperty('sort', { sort_config: [{ field: 'updated_at', desc: true }] }, ids),
-    { sort_config: [{ field: 'fld_updated', desc: true }] }
+    { sort_config: [{ field: 'updated_at', desc: true }] }
   );
 });
