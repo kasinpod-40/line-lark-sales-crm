@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { isNoOpMutationFailure, readbackDesiredForViewProperty, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
+import { resourceMapFromList } from "./lark-cli-resource-list.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaContract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-contract.json"), "utf8"));
@@ -101,35 +102,21 @@ function verifyUserAuthStatus() {
   if (status?.verified !== true) throw new Error(`Lark user auth status is not verified${status?.verifyError ? ` | ${status.verifyError}` : ""}`);
 }
 
-function collectObjects(value, out = []) {
-  if (Array.isArray(value)) for (const item of value) collectObjects(item, out);
-  else if (value && typeof value === "object") {
-    out.push(value);
-    for (const child of Object.values(value)) collectObjects(child, out);
-  }
-  return out;
+function tableMap(payload) {
+  return resourceMapFromList(payload, { collectionKeys: ["tables"], nameKeys: ["name", "table_name"], idKeys: ["id", "table_id"], label: "table" });
 }
-
-function getString(obj, keys) {
-  for (const key of keys) if (typeof obj?.[key] === "string" && obj[key].trim()) return obj[key].trim();
-  return "";
+function fieldMap(payload) {
+  return resourceMapFromList(payload, { collectionKeys: ["fields"], nameKeys: ["name", "field_name"], idKeys: ["id", "field_id"], label: "field" });
 }
-
-function objectMap(payload, { nameKeys, idKeys }) {
-  const map = new Map();
-  for (const obj of collectObjects(payload)) {
-    const name = getString(obj, nameKeys);
-    const id = getString(obj, idKeys);
-    if (name && !map.has(name)) map.set(name, { id, raw: obj });
-  }
-  return map;
+function viewMap(payload) {
+  return resourceMapFromList(payload, { collectionKeys: ["views"], nameKeys: ["name", "view_name"], idKeys: ["id", "view_id"], label: "view" });
 }
-
-function tableMap(payload) { return objectMap(payload, { nameKeys: ["name", "table_name"], idKeys: ["id", "table_id"] }); }
-function fieldMap(payload) { return objectMap(payload, { nameKeys: ["name", "field_name"], idKeys: ["id", "field_id"] }); }
-function viewMap(payload) { return objectMap(payload, { nameKeys: ["name", "view_name"], idKeys: ["id", "view_id"] }); }
-function dashboardMap(payload) { return objectMap(payload, { nameKeys: ["name", "dashboard_name"], idKeys: ["dashboard_id", "id"] }); }
-function blockMap(payload) { return objectMap(payload, { nameKeys: ["name", "block_name"], idKeys: ["block_id", "id"] }); }
+function dashboardMap(payload) {
+  return resourceMapFromList(payload, { collectionKeys: ["items", "dashboards"], nameKeys: ["name", "dashboard_name"], idKeys: ["dashboard_id", "id"], label: "dashboard" });
+}
+function blockMap(payload) {
+  return resourceMapFromList(payload, { collectionKeys: ["items", "blocks"], nameKeys: ["name", "block_name"], idKeys: ["block_id", "id"], label: "dashboard block" });
+}
 
 function listTables(baseToken) {
   return tableMap(runLark(["base", "+table-list", "--base-token", baseToken], "List Base tables"));
@@ -147,15 +134,6 @@ function listDashboardBlocks(baseToken, dashboardId) {
   return blockMap(runLark(["base", "+dashboard-block-list", "--base-token", baseToken, "--dashboard-id", dashboardId, "--page-size", "100"], `List dashboard blocks ${dashboardId}`));
 }
 
-function fieldIdsByName(fields, tableName) {
-  const ids = {};
-  for (const [name, meta] of fields.entries()) {
-    if (!meta.id) throw new Error(`Field ${tableName}.${name} exists but current Lark CLI returned no id/field_id`);
-    ids[name] = meta.id;
-  }
-  return ids;
-}
-
 function expectedFieldNames(tableName) {
   const table = schemaContract.tables.find((item) => item.name === tableName);
   if (!table) throw new Error(`UX contract references unknown table ${tableName}`);
@@ -164,6 +142,17 @@ function expectedFieldNames(tableName) {
     ...(table.deferred_fields || []).map((field) => field.name),
     ...(table.generated_backlinks || []),
   ]);
+}
+
+function fieldIdsByName(fields, tableName) {
+  const ids = {};
+  for (const name of expectedFieldNames(tableName)) {
+    const meta = fields.get(name);
+    if (!meta) throw new Error(`Expected field ${tableName}.${name} is missing from current Lark field list`);
+    if (!meta.id) throw new Error(`Field ${tableName}.${name} exists but current Lark CLI returned no id/field_id`);
+    ids[name] = meta.id;
+  }
+  return ids;
 }
 
 function verifySchema(baseToken) {
