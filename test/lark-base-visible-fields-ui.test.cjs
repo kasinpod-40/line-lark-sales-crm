@@ -28,6 +28,19 @@ test('visible-field fallback reconciles membership without retrying unsupported 
   assert.doesNotMatch(browser, /hide every other currently-visible field/);
 });
 
+test('visible-field fallback resolves canonical tables directly with bounded SDK-context retries', () => {
+  assert.match(browser, /getTableByNameEventually\(base, tableContract\.name\)/);
+  assert.match(browser, /async function getTableByNameEventually\(base, tableName, attempts = 8\)/);
+  assert.match(browser, /await base\.getTableByName\(tableName\)/);
+  assert.match(browser, /if \(attempt < attempts\) await sleep\(150 \* attempt\)/);
+  assert.match(browser, /Base context not ready or wrong Base after \$\{attempts\} reads/);
+  assert.match(browser, /available_tables=/);
+  assert.match(browser, /selection_table_id=/);
+  assert.match(browser, /active_table=/);
+  assert.match(browser, /base_context_table_reads/);
+  assert.doesNotMatch(browser, /const tableMetas = await base\.getTableMetaList\(\);\n    const tableByName/);
+});
+
 test('visible-field fallback reports presentation-only mutations and no business-data mutation', () => {
   assert.match(browser, /table_mutation_count: 0/);
   assert.match(browser, /field_schema_mutation_count: 0/);
