@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK VIEW WRITE+READBACK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CONCRETE TABLE+VIEW ID MUTATION PATH VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -94,19 +94,21 @@ Live target output proved `+view-get-visible-fields` returns canonical field **n
 ### 5. `group` readback identity
 Live target output also proved `+view-get-group` resolves persisted field references to canonical field **names**. Readback verification keeps names for `visible_fields`, `group`, and `sort`, while tolerating wrapper differences and alternate ID-shaped responses.
 
-### 6. write identity differs from readback identity — latest live evidence
-The `🧠 AI Lead Intelligence` view remained with all fields visible even though the requested subset was correct. The important distinction is now explicit:
-- current official CLI mutation tests for `+view-set-visible-fields`, `+view-set-group`, and `+view-set-sort` send concrete `fld...` field IDs in the API body
-- live target getter output resolves those references back to canonical field names
-- therefore a single representation cannot be used for both mutation payload and readback comparison
+### 6. write identity differs from readback identity
+Official CLI mutation tests use concrete `fld...` IDs for `visible_fields`, `group`, and `sort`, while live getters resolve back to field names. Mutation and readback representations are now intentionally separate.
+
+### 7. view-name addressing on property endpoints — latest live evidence
+A repeated `🧠 AI Lead Intelligence` mismatch showed the desired field subset still was not applied even after mutation payloads used field IDs. The remaining identity bug was in the resource path itself: the provisioner was still passing the human View **name** to `--view-id` for property GET/PUT operations and, after creating a View, it even discarded the returned concrete View ID by storing `{ id: "" }` locally.
+
+Official current CLI flags describe View references as ID or name, but the low-level property shortcut directly places the provided `view-id` value into `/views/:view_id/...`. For deterministic live mutation we must not rely on name addressing for those property endpoints.
 
 Fix verified:
-- mutation payloads for `visible_fields`, `group`, and `sort` are built from current target field IDs
-- readback expectations remain stable contract field names
-- matcher canonicalizes any alternate ID-shaped readback to names before comparison
-- contract objects are not mutated while building API payloads
-- filters remain in their documented name-based form
-- regression tests assert ID-based writes and name-based reads simultaneously
+- schema preflight resolves and requires concrete `tbl...` IDs for all three business tables
+- View list/create/rename/delete/property read/property write all use concrete current `vew...` IDs
+- newly-created View metadata retains the actual returned ID instead of replacing it with an empty placeholder
+- final verification refreshes the live View list and resolves every curated View name back to its current concrete ID before reading properties
+- dashboard/block existence checks also require concrete IDs before continuing
+- regression coverage prevents reintroducing name-based property mutation or the empty-ID placeholder
 
 These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
 
@@ -132,15 +134,15 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`e81a9de27c6414cda115776a678f5d643eccf2b9`
+`8426bf7202940eea6b89148cf33d043f025a3a8d`
 
 GitHub CI:
-- run `32564721159` / run #159
-- job `97011572058`
+- run `32565648487` / run #162
+- job `97013779001`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **64/64 PASS**
+- unit/contract tests: **65/65 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
@@ -170,7 +172,7 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull current branch head containing verified code SHA `e81a9de27c6414cda115776a678f5d643eccf2b9` or a later docs-only commit containing it.
+1. Pull current branch head containing verified code SHA `8426bf7202940eea6b89148cf33d043f025a3a8d` or a later docs-only commit containing it.
 2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
 3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
 4. Apply the three locked table icons manually in Lark UI.
