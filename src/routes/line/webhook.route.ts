@@ -5,6 +5,8 @@ import { enqueueLineEvent } from "../../queues/line-event.producer";
 import { asNumber, asString, isRecord } from "../../utils/json";
 import { jsonResponse } from "../../utils/response";
 
+const supportedTypes = new Set<LineQueueMessageType>(["text", "image", "sticker", "audio", "file", "location"]);
+
 function parseSupportedMessageEvent(destination: string, event: unknown): LineEventQueueMessage | null {
   if (!isRecord(event) || event.type !== "message" || !isRecord(event.source) || !isRecord(event.message)) return null;
   const source = event.source;
@@ -13,9 +15,13 @@ function parseSupportedMessageEvent(destination: string, event: unknown): LineEv
   const messageId = asString(message.id).trim();
   const sourceType = asString(source.type) as LineSourceType;
   const messageType = asString(message.type) as LineQueueMessageType;
-  if (!userId || !messageId || sourceType !== "user" || !["text", "image", "sticker"].includes(messageType)) return null;
+  if (!userId || !messageId || sourceType !== "user" || !supportedTypes.has(messageType)) return null;
+
   const deliveryContext = isRecord(event.deliveryContext) ? event.deliveryContext : {};
   const contentProvider = isRecord(message.contentProvider) ? message.contentProvider : {};
+  const latitude = typeof message.latitude === "number" ? message.latitude : undefined;
+  const longitude = typeof message.longitude === "number" ? message.longitude : undefined;
+
   return {
     schema_version: 1,
     channel: "LINE",
@@ -33,8 +39,16 @@ function parseSupportedMessageEvent(destination: string, event: unknown): LineEv
       text: asString(message.text).trim() || undefined,
       package_id: asString(message.packageId).trim() || undefined,
       sticker_id: asString(message.stickerId).trim() || undefined,
-      content_provider_type: contentProvider.type === "external" ? "external" : "line",
+      content_provider_type: isRecord(message.contentProvider) ? (contentProvider.type === "external" ? "external" : "line") : undefined,
       original_content_url: asString(contentProvider.originalContentUrl).trim() || undefined,
+      preview_image_url: asString(contentProvider.previewImageUrl).trim() || undefined,
+      file_name: asString(message.fileName).trim() || undefined,
+      file_size: typeof message.fileSize === "number" ? message.fileSize : undefined,
+      duration_ms: typeof message.duration === "number" ? message.duration : undefined,
+      title: asString(message.title).trim() || undefined,
+      address: asString(message.address).trim() || undefined,
+      latitude,
+      longitude,
     },
   };
 }
