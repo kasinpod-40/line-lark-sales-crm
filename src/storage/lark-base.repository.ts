@@ -41,6 +41,11 @@ const CLOSED_WON_VALUES = new Set(["Closed Won", "Closed Won 🏆"]);
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
+export function larkUserCell(openId?: string | null): Array<{ id: string }> {
+  const id = String(openId ?? "").trim();
+  return id ? [{ id }] : [];
+}
+
 async function tenantToken(env: Env): Promise<string> {
   const now = Date.now();
   if (cachedToken && cachedToken.expiresAt - now > 60_000) return cachedToken.value;
@@ -212,6 +217,7 @@ export class LarkBaseRepository {
     const customerStage = existing
       ? preservedCustomerStage(asString(existing.fields.customer_stage, CUSTOMER_STAGE.NEW), incomingStage)
       : incomingStage;
+    const salesId = snapshot.assigned_sales_id ?? (existing ? asString(existing.fields.assigned_sales_id) : "");
     const fields: UnknownRecord = {
       customer_id: snapshot.customer_id,
       line_user_id: snapshot.line_user_id,
@@ -219,8 +225,9 @@ export class LarkBaseRepository {
       picture_url: snapshot.picture_url ?? "",
       customer_stage: customerStage,
       vip_status: snapshot.vip_status ?? (existing ? asString(existing.fields.vip_status, VIP_STATUS.STANDARD) : VIP_STATUS.STANDARD),
-      assigned_sales_id: snapshot.assigned_sales_id ?? (existing ? asString(existing.fields.assigned_sales_id) : ""),
+      assigned_sales_id: salesId,
       assigned_sales_name: snapshot.assigned_sales_name ?? (existing ? asString(existing.fields.assigned_sales_name) : ""),
+      sales: larkUserCell(salesId),
       ai_intent: snapshot.ai.intent,
       ai_intent_label: intentLabel(snapshot.ai.intent),
       buyer_intent: snapshot.ai.buyer_intent,
@@ -245,6 +252,7 @@ export class LarkBaseRepository {
     await this.update(table, existing.record_id, {
       assigned_sales_id: salesId,
       assigned_sales_name: salesName,
+      sales: larkUserCell(salesId),
       customer_stage: [CUSTOMER_STAGE.ACTIVE, CUSTOMER_STAGE.QUOTATION].includes(currentStage as typeof CUSTOMER_STAGE.ACTIVE | typeof CUSTOMER_STAGE.QUOTATION)
         ? currentStage
         : CUSTOMER_STAGE.CONTACTED,
@@ -290,6 +298,7 @@ export class LarkBaseRepository {
       sales_reply_time: route.first_response_at ?? null,
       assigned_sales: route.owner_name ?? "",
       assigned_sales_id: route.owner_open_id ?? "",
+      sales: larkUserCell(route.owner_open_id),
       ai_intent: route.latest_intent ?? "",
       channel: "🟢 LINE Official Account",
       lark_root_message_id: route.root_message_id ?? "",
@@ -321,6 +330,7 @@ export class LarkBaseRepository {
       ...(customer ? { customer: [customer.record_id] } : {}),
       assigned_sales: input.sales_name ?? "",
       assigned_sales_id: input.sales_id ?? "",
+      sales: larkUserCell(input.sales_id),
       direction: input.direction,
       channel: "🟢 LINE Official Account",
       message_type: input.message_type,
@@ -345,6 +355,7 @@ export class LarkBaseRepository {
       deal_value_thb: input.quote.total_amount,
       sales_id: input.route.owner_open_id ?? "",
       sales_rep: input.route.owner_name ?? "",
+      sales: larkUserCell(input.route.owner_open_id),
       deal_status: existing ? asString(existing.fields.deal_status, "Open") : "Open",
       pipeline_stage: "Quotation",
       quotation_no: input.quote.quotation_no,
