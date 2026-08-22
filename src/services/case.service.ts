@@ -10,9 +10,21 @@ import { downloadExternalContent, downloadLineMessageContent, getLineUserProfile
 import type { LineEventQueueMessage } from "../queues/line-event.types";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
+import { MediaAssetService } from "./media-asset.service";
+
+const MAX_LARK_INLINE_FILE_BYTES = 25 * 1024 * 1024;
 
 function fallbackName(lineUserId: string): string {
   return `LINE User ${lineUserId.slice(-6)}`;
+}
+
+function fileNameFor(event: LineEventQueueMessage, mimeType: string): string {
+  if (event.message.file_name?.trim()) return event.message.file_name.trim();
+  if (mimeType === "application/pdf") return `line-${event.message.id}.pdf`;
+  if (mimeType === "audio/mpeg") return `line-${event.message.id}.mp3`;
+  if (mimeType === "audio/mp4" || mimeType === "audio/x-m4a") return `line-${event.message.id}.m4a`;
+  if (mimeType === "audio/ogg") return `line-${event.message.id}.ogg`;
+  return `line-${event.message.id}.bin`;
 }
 
 function imageAiToAnalysis(image: Awaited<ReturnType<typeof analyzeImage>>): AIAnalysisResult {
@@ -57,7 +69,10 @@ function imageAiToAnalysis(image: Awaited<ReturnType<typeof analyzeImage>>): AIA
 
 function messageText(event: LineEventQueueMessage, ai?: AIAnalysisResult): string {
   if (event.message.type === "text") return event.message.text?.trim() || "(ข้อความว่าง)";
-  if (event.message.type === "sticker") return `LINE Sticker package=${event.message.package_id ?? "-"} sticker=${event.message.sticker_id ?? "-"}`;
+  if (event.message.type === "sticker") return `ลูกค้าส่ง LINE Sticker package=${event.message.package_id ?? "-"} sticker=${event.message.sticker_id ?? "-"}`;
+  if (event.message.type === "file") return `ลูกค้าส่งไฟล์ ${event.message.file_name ?? "attachment"}`;
+  if (event.message.type === "audio") return `ลูกค้าส่งไฟล์เสียง${event.message.duration_ms ? ` (${Math.round(event.message.duration_ms / 1000)} วินาที)` : ""}`;
+  if (event.message.type === "location") return `ลูกค้าส่งพิกัด ${event.message.title ?? ""} ${event.message.address ?? ""}`.trim();
   return ai?.ai_summary || "ลูกค้าส่งรูปภาพ";
 }
 
@@ -65,11 +80,13 @@ export class CaseService {
   private readonly operational: OperationalRepository;
   private readonly base: LarkBaseRepository;
   private readonly lark: LarkClient;
+  private readonly media: MediaAssetService;
 
   constructor(private readonly env: Env) {
     this.operational = new OperationalRepository(env);
     this.base = new LarkBaseRepository(env);
     this.lark = new LarkClient(env);
+    this.media = new MediaAssetService(env);
   }
 
   async processLineEvent(event: LineEventQueueMessage): Promise<void> {
@@ -85,16 +102,25 @@ export class CaseService {
       const customerName = profile?.displayName?.trim() || fallbackName(event.user_id);
 
       let ai: AIAnalysisResult;
-      let imageBytes: ArrayBuffer | null = null;
-      let imageMime = "";
+      let downloadedBytes: ArrayBuffer | null = null;
+      let downloadedMime = "";
       if (event.message.type === "image") {
         const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
           ? await downloadExternalContent(event.message.original_content_url)
           : await downloadLineMessageContent(this.env, event.message.id);
         if (!downloaded.mime_type.startsWith("image/")) throw new Error(`LINE message content is not an image: ${downloaded.mime_type}`);
-        imageBytes = downloaded.bytes;
-        imageMime = downloaded.mime_type;
+        downloadedBytes = downloaded.bytes;
+        downloadedMime = downloaded.mime_type;
         ai = imageAiToAnalysis(await analyzeImage(this.env, downloaded.bytes, downloaded.mime_type));
+      } else if (event.message.type === "file" && (event.message.file_size ?? 0) > MAX_LARK_INLINE_FILE_BYTES) {
+        ai = await analyzeIncomingText(this.env, messageText(event));
+      } else if (event.message.type === "file" || event.message.type === "audio") {
+        const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
+          ? await downloadExternalContent(event.message.original_content_url)
+          : await downloadLineMessageContent(this.env, event.message.id);
+        downloadedBytes = downloaded.bytes;
+        downloadedMime = downloaded.mime_type;
+        ai = await analyzeIncomingText(this.env, messageText(event));
       } else {
         ai = await analyzeIncomingText(this.env, messageText(event));
       }
@@ -116,15 +142,16 @@ export class CaseService {
             ...inboundSnapshot,
           });
         } catch (error) {
-          // A second Queue consumer can race here. The partial unique index on
-          // active line_user_id is authoritative; if another consumer won,
-          // attach this message to that same case instead of creating a duplicate.
           const concurrent = await this.operational.findActiveCaseByLineUserId(event.user_id);
           if (!concurrent) throw error;
           route = await this.operational.updateInbound(concurrent.case_id, inboundSnapshot);
         }
       } else {
         route = await this.operational.updateInbound(route.case_id, inboundSnapshot);
+      }
+
+      if (ai.intent === "payment_slip" && route.owner_open_id && !["PAYMENT", "WON", "RESOLVED"].includes(route.status)) {
+        route = await this.operational.setCaseStatus(route.case_id, "PAYMENT");
       }
 
       const lifetimeValue = await this.base.getCustomerLifetimeValue(customerId);
@@ -165,11 +192,51 @@ export class CaseService {
 
       if (!route.root_message_id) throw new Error("Case root Lark message was not created");
 
-      if (event.message.type === "image" && imageBytes) {
-        const extension = imageMime.includes("png") ? "png" : imageMime.includes("webp") ? "webp" : "jpg";
-        const imageKey = await this.lark.uploadMessageImage(imageBytes, imageMime, `line-${event.message.id}.${extension}`);
-        await this.lark.replyImage(route.root_message_id, imageKey);
+      if (event.message.type === "image" && downloadedBytes) {
+        const extension = downloadedMime.includes("png") ? "png" : downloadedMime.includes("webp") ? "webp" : "jpg";
+        try {
+          const imageKey = await this.lark.uploadMessageImage(downloadedBytes, downloadedMime, `line-${event.message.id}.${extension}`);
+          await this.lark.replyImage(route.root_message_id, imageKey);
+        } catch (error) {
+          const stored = await this.media.store({
+            caseId: route.case_id,
+            sourceMessageId: event.message.id,
+            mediaKind: "image",
+            bytes: downloadedBytes,
+            mimeType: downloadedMime,
+            fileName: `line-${event.message.id}.${extension}`,
+          });
+          await this.lark.replyText(route.root_message_id, `🖼 รูปจากลูกค้า (เปิดไฟล์)\n${stored.url}`);
+          console.warn("LARK_IMAGE_UPLOAD_FALLBACK", error instanceof Error ? error.message : String(error));
+        }
         await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
+      } else if ((event.message.type === "file" || event.message.type === "audio") && downloadedBytes) {
+        const fileName = fileNameFor(event, downloadedMime);
+        try {
+          const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName, event.message.duration_ms);
+          await this.lark.replyFile(route.root_message_id, fileKey);
+        } catch (error) {
+          const stored = await this.media.store({
+            caseId: route.case_id,
+            sourceMessageId: event.message.id,
+            mediaKind: event.message.type === "audio" ? "audio" : "file",
+            bytes: downloadedBytes,
+            mimeType: downloadedMime,
+            fileName,
+          });
+          await this.lark.replyText(route.root_message_id, `📎 ${fileName}\n${stored.url}`);
+          console.warn("LARK_FILE_UPLOAD_FALLBACK", error instanceof Error ? error.message : String(error));
+        }
+        await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
+      } else if (event.message.type === "file" && !downloadedBytes) {
+        await this.lark.replyText(route.root_message_id, `⚠️ ${messageText(event, ai)} • ไฟล์ใหญ่เกิน ${Math.round(MAX_LARK_INLINE_FILE_BYTES / 1024 / 1024)} MB จึงไม่ดึงเข้า Worker อัตโนมัติ`);
+      } else if (event.message.type === "location") {
+        const latitude = event.message.latitude;
+        const longitude = event.message.longitude;
+        const mapUrl = typeof latitude === "number" && typeof longitude === "number"
+          ? `https://www.google.com/maps?q=${latitude},${longitude}`
+          : "";
+        await this.lark.replyText(route.root_message_id, `📍 ลูกค้า • ${messageText(event, ai)}${mapUrl ? `\n${mapUrl}` : ""}`);
       } else {
         await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
       }
