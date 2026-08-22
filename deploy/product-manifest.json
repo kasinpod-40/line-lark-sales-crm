@@ -8,6 +8,8 @@
     "Sales_Deals"
   ],
   "base_schema_contract": "docs/lark-base-schema.md",
+  "base_machine_contract": "deploy/lark-base-contract.json",
+  "base_provisioner": "scripts/provision-lark-base.mjs",
   "d1_migrations": [
     "migrations/0001_operational_state.sql",
     "migrations/0002_srs_media_and_campaign_observability.sql"
@@ -56,7 +58,8 @@
   "acceptance": {
     "checklist": "docs/setup.md",
     "delivery_model": "docs/single-stack-delivery.md",
-    "customer_installation_model": "docs/customer-deployment-model.md"
+    "customer_installation_model": "docs/customer-deployment-model.md",
+    "pm_handoff_model": "docs/pm-presentation-handoff.md"
   },
   "rules": {
     "field_naming": "lower_snake_case",
