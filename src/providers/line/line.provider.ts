@@ -18,7 +18,23 @@ export type DownloadedLineContent = {
 export interface LineTextMessage { type: "text"; text: string; }
 export interface LineFlexMessage { type: "flex"; altText: string; contents: unknown; }
 export interface LineImageMessage { type: "image"; originalContentUrl: string; previewImageUrl: string; }
-export type LineOutboundMessage = LineTextMessage | LineFlexMessage | LineImageMessage;
+export interface LineAudioMessage { type: "audio"; originalContentUrl: string; duration: number; }
+export interface LineLocationMessage { type: "location"; title: string; address: string; latitude: number; longitude: number; }
+export interface LineStickerMessage { type: "sticker"; packageId: string; stickerId: string; }
+export type LineOutboundMessage = LineTextMessage | LineFlexMessage | LineImageMessage | LineAudioMessage | LineLocationMessage | LineStickerMessage;
+
+const LINE_USER_ID_PATTERN = /^U[0-9a-f]{32}$/i;
+
+export class LineApiError extends Error {
+  constructor(public readonly status: number, public readonly path: string, message: string) {
+    super(message);
+    this.name = "LineApiError";
+  }
+}
+
+export function isValidLineUserId(value: string): boolean {
+  return LINE_USER_ID_PATTERN.test(value.trim());
+}
 
 function base64ToBytes(value: string): Uint8Array {
   const binary = atob(value);
@@ -55,7 +71,7 @@ export async function getLineUserProfile(env: Env, userId: string): Promise<Line
   const response = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, { headers: { Authorization: `Bearer ${accessToken(env)}` } });
   if (response.status === 404) return null;
   const bodyText = await response.text();
-  if (!response.ok) throw new Error(`LINE profile error: ${response.status} ${bodyText.slice(0, 500)}`);
+  if (!response.ok) throw new LineApiError(response.status, "/v2/bot/profile", `LINE profile error: ${response.status} ${bodyText.slice(0, 500)}`);
   const parsed: unknown = JSON.parse(bodyText);
   if (!isRecord(parsed)) return null;
   return {
@@ -71,7 +87,7 @@ export async function downloadLineMessageContent(env: Env, messageId: string): P
   const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: `Bearer ${accessToken(env)}` } });
   if (!response.ok) {
     const bodyText = await response.text();
-    throw new Error(`LINE content error: ${response.status} ${bodyText.slice(0, 500)}`);
+    throw new LineApiError(response.status, "/v2/bot/message/{id}/content", `LINE content error: ${response.status} ${bodyText.slice(0, 500)}`);
   }
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength === 0) throw new Error("LINE content is empty");
@@ -98,25 +114,24 @@ async function linePost(env: Env, path: string, body: unknown, retryKey?: string
   if (retryKey) headers["X-Line-Retry-Key"] = retryKey;
   const response = await fetch(`https://api.line.me${path}`, { method: "POST", headers, body: JSON.stringify(body) });
 
-  // When a retry key was already accepted, LINE returns 409. That means the
-  // original request was accepted and must be treated as terminal success;
-  // retrying again would never advance our local state.
+  // With a retry key, 409 means LINE already accepted the original request.
   if (response.status === 409 && retryKey) return;
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`LINE API ${path} failed: ${response.status} ${text.slice(0, 800)}`);
+    throw new LineApiError(response.status, path, `LINE API ${path} failed: ${response.status} ${text.slice(0, 800)}`);
   }
 }
 
 export async function pushLineMessages(env: Env, userId: string, messages: LineOutboundMessage[], retryKey?: string): Promise<void> {
-  if (!userId.trim()) throw new Error("LINE user ID is required");
+  if (!isValidLineUserId(userId)) throw new Error("Invalid LINE user ID");
   if (messages.length === 0 || messages.length > 5) throw new Error("LINE push supports 1-5 messages per request");
   await linePost(env, "/v2/bot/message/push", { to: userId, messages }, retryKey);
 }
 
 export async function multicastLineMessages(env: Env, userIds: string[], messages: LineOutboundMessage[], retryKey?: string): Promise<void> {
   if (userIds.length === 0 || userIds.length > 500) throw new Error("LINE multicast supports 1-500 user IDs per request");
+  if (userIds.some((userId) => !isValidLineUserId(userId))) throw new Error("LINE multicast contains invalid user ID");
   if (messages.length === 0 || messages.length > 5) throw new Error("LINE multicast supports 1-5 messages per request");
   await linePost(env, "/v2/bot/message/multicast", { to: userIds, messages }, retryKey);
 }
