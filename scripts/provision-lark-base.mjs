@@ -159,6 +159,34 @@ function fieldMap(payload) {
   return map;
 }
 
+function expectedFieldType(table, name) {
+  const field = [...table.fields, ...(table.deferred_fields || [])].find((item) => item.name === name);
+  if (field) return field.type;
+  if ((table.generated_backlinks || []).includes(name)) return "link";
+  return "";
+}
+
+function validateExistingFields(table, fields) {
+  if (!fields.has(table.primary_field)) {
+    throw new Error(`Existing table ${table.name} does not have required primary field ${table.primary_field}; refusing to create a duplicate or mutate primary identity`);
+  }
+  for (const [name, actual] of fields.entries()) {
+    const expected = expectedFieldType(table, name);
+    if (!expected) continue;
+    if (typeof actual.type === "string" && actual.type && actual.type !== expected) {
+      throw new Error(`Schema mismatch ${table.name}.${name}: expected type ${expected}, got ${actual.type}`);
+    }
+  }
+}
+
+function assertNoUnexpectedTables(tables) {
+  const allowed = new Set(contract.tables.map((table) => table.name));
+  const unexpected = [...tables.keys()].filter((name) => !allowed.has(name));
+  if (unexpected.length) {
+    throw new Error(`Base contains unexpected table(s): ${unexpected.join(", ")}. Refusing mutation because the golden contract requires exactly Customers, Chat_Tracking, Sales_Deals.`);
+  }
+}
+
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
 async function listTables(baseToken, requiredNames = []) {
@@ -214,6 +242,12 @@ async function apply(args) {
   }
 
   let tables = await listTables(baseToken, createdNames);
+  // Resume mode must be safe against accidentally pointing at an unrelated Base.
+  assertNoUnexpectedTables(tables);
+  for (const table of contract.tables) {
+    if (tables.has(table.name)) validateExistingFields(table, listFields(baseToken, table.name));
+  }
+
   for (const table of contract.tables) {
     if (!tables.has(table.name)) {
       runLark([
@@ -231,15 +265,14 @@ async function apply(args) {
   // Resume-safe reconciliation: existing tables may be partially provisioned.
   for (const table of contract.tables) {
     let fields = listFields(baseToken, table.name);
-    if (!fields.has(table.primary_field)) {
-      throw new Error(`Existing table ${table.name} does not have required primary field ${table.primary_field}; refusing to create a duplicate or mutate primary identity`);
-    }
+    validateExistingFields(table, fields);
     const missing = table.fields.filter((field) => field.name !== table.primary_field && !fields.has(field.name));
     if (missing.length) {
       createFields(baseToken, table.name, missing, `Create missing fields in ${table.name}`);
       fields = listFields(baseToken, table.name);
       const stillMissing = missing.filter((field) => !fields.has(field.name));
       if (stillMissing.length) throw new Error(`Missing fields after create in ${table.name}: ${stillMissing.map((field) => field.name).join(", ")}`);
+      validateExistingFields(table, fields);
     }
   }
 
@@ -253,13 +286,20 @@ async function apply(args) {
   }
 
   tables = await listTables(baseToken, contract.tables.map((table) => table.name));
+  assertNoUnexpectedTables(tables);
   const missingTables = contract.tables.map((table) => table.name).filter((name) => !tables.has(name));
   if (missingTables.length) throw new Error(`Final table verification failed; missing: ${missingTables.join(", ")}`);
 
-  const allowed = new Set(contract.tables.map((table) => table.name));
-  const unexpected = [...tables.keys()].filter((name) => !allowed.has(name));
-  if (unexpected.length) {
-    throw new Error(`Base contains unexpected table(s): ${unexpected.join(", ")}. The golden contract requires exactly Customers, Chat_Tracking, Sales_Deals.`);
+  for (const table of contract.tables) {
+    const fields = listFields(baseToken, table.name);
+    validateExistingFields(table, fields);
+    const expectedNames = [
+      ...table.fields.map((field) => field.name),
+      ...(table.deferred_fields || []).map((field) => field.name),
+      ...(table.generated_backlinks || []),
+    ];
+    const missing = expectedNames.filter((name) => !fields.has(name));
+    if (missing.length) throw new Error(`Final field verification failed in ${table.name}; missing: ${missing.join(", ")}`);
   }
 
   const result = {
