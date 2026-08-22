@@ -59,6 +59,32 @@ function validatePositiveNumber(issues: ConfigIssue[], key: string, raw: string 
   }
 }
 
+function looksLikePlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized.endsWith("_xxx")
+    || normalized.includes("replace_")
+    || normalized.includes("replace-")
+    || normalized.includes("your-worker.example")
+    || normalized === "example";
+}
+
+function validatePromptPayTarget(issues: ConfigIssue[], target: string, type: string): void {
+  if (!target.trim()) return;
+  const digits = target.replace(/\D/g, "");
+  let valid = false;
+  if (type === "phone") valid = (digits.length === 10 && digits.startsWith("0")) || (digits.length === 11 && digits.startsWith("66"));
+  else if (type === "national_id") valid = digits.length === 13;
+  else if (type === "ewallet") valid = digits.length > 0;
+  if (!valid) {
+    issues.push({
+      severity: "error",
+      code: "INVALID_PROMPTPAY_TARGET",
+      key: "PROMPTPAY_TARGET",
+      message: `PROMPTPAY_TARGET does not match PROMPTPAY_TARGET_TYPE=${type}`,
+    });
+  }
+}
+
 export function validateDeploymentConfig(env: Env): DeploymentReadiness {
   const issues: ConfigIssue[] = [];
 
@@ -77,6 +103,27 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
     "PUBLIC_BASE_URL",
   ];
   for (const key of requiredKeys) requiredString(issues, env, key);
+
+  const placeholderKeys: Array<keyof Env> = [
+    "LARK_APP_ID",
+    "LARK_SALES_INBOX_CHAT_ID",
+    "LARK_BASE_APP_TOKEN",
+    "LARK_BASE_CUSTOMERS_TABLE_ID",
+    "LARK_BASE_CHAT_TRACKING_TABLE_ID",
+    "LARK_BASE_SALES_DEALS_TABLE_ID",
+    "PUBLIC_BASE_URL",
+  ];
+  for (const key of placeholderKeys) {
+    const value = env[key];
+    if (typeof value === "string" && value.trim() && looksLikePlaceholder(value)) {
+      issues.push({
+        severity: "error",
+        code: "PLACEHOLDER_CONFIG_VALUE",
+        key: String(key),
+        message: `${String(key)} still contains an example/placeholder value`,
+      });
+    }
+  }
 
   if (!env.DB) {
     issues.push({ severity: "error", code: "MISSING_BINDING", key: "DB", message: "D1 binding DB is required" });
@@ -118,6 +165,8 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
       key: "PROMPTPAY_TARGET_TYPE",
       message: "PROMPTPAY_TARGET_TYPE must be phone, national_id, or ewallet",
     });
+  } else {
+    validatePromptPayTarget(issues, env.PROMPTPAY_TARGET ?? "", promptPayType);
   }
 
   const vat = numberValue(env.QUOTE_DEFAULT_VAT_RATE);
