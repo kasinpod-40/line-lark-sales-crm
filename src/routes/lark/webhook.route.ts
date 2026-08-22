@@ -81,24 +81,67 @@ function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
 
 export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerExecutionContext): Promise<Response> {
   if (request.method !== "POST") return jsonResponse({ ok: false, message: "Method not allowed" }, 405);
+
+  const startedAt = Date.now();
+  const rawText = await request.text();
+  const initial = parseJsonRecord(rawText);
+  const encrypted = Boolean(initial && asString(initial.encrypt));
+
+  console.log("LARK_CALLBACK_DIAGNOSTIC", JSON.stringify({
+    stage: "received",
+    encrypted,
+    body_bytes: new TextEncoder().encode(rawText).byteLength,
+  }));
+
   let body: UnknownRecord;
-  try { body = await parseBody(await request.text(), env); }
-  catch (error) { return jsonResponse({ ok: false, message: error instanceof Error ? error.message : String(error) }, 400); }
+  try {
+    body = await parseBody(rawText, env);
+  } catch (error) {
+    console.warn("LARK_CALLBACK_DIAGNOSTIC", JSON.stringify({
+      stage: "parse_or_decrypt_failed",
+      encrypted,
+      elapsed_ms: Date.now() - startedAt,
+      error_name: error instanceof Error ? error.name : "unknown",
+    }));
+    return jsonResponse({ ok: false, message: "Invalid Lark callback payload" }, 400);
+  }
 
   // Lark URL verification is a time-sensitive ownership handshake. The platform
   // requires the received challenge to be echoed within one second. Do not put
   // the handshake behind runtime event-token validation; real event/card pushes
   // below remain protected by LARK_VERIFICATION_TOKEN.
   const challenge = asString(body.challenge);
-  if (challenge) return jsonResponse({ challenge });
+  if (challenge) {
+    console.log("LARK_CALLBACK_DIAGNOSTIC", JSON.stringify({
+      stage: "challenge_echo",
+      encrypted,
+      elapsed_ms: Date.now() - startedAt,
+    }));
+    return jsonResponse({ challenge });
+  }
 
   const configuredToken = env.LARK_VERIFICATION_TOKEN?.trim();
   if (configuredToken) {
     const received = verificationToken(body);
-    if (!received || received !== configuredToken) return jsonResponse({ ok: false, message: "Invalid Lark verification token" }, 401);
+    if (!received || received !== configuredToken) {
+      console.warn("LARK_CALLBACK_DIAGNOSTIC", JSON.stringify({
+        stage: "verification_rejected",
+        encrypted,
+        token_present: Boolean(received),
+        elapsed_ms: Date.now() - startedAt,
+      }));
+      return jsonResponse({ ok: false, message: "Invalid Lark verification token" }, 401);
+    }
   }
 
   const eventType = isRecord(body.header) ? asString(body.header.event_type) : asString(body.type);
+  console.log("LARK_CALLBACK_DIAGNOSTIC", JSON.stringify({
+    stage: "runtime_event",
+    encrypted,
+    event_type_present: Boolean(eventType),
+    elapsed_ms: Date.now() - startedAt,
+  }));
+
   if (eventType === "im.message.receive_v1") {
     const event = parseMessageEvent(body);
     if (event) ctx.waitUntil(new LarkEventService(env).handleMessage(event).catch((error) => console.error("LARK_MESSAGE_EVENT_FAILED", error)));
