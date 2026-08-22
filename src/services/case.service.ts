@@ -182,6 +182,9 @@ export class CaseService {
       const savedCustomer = await this.base.upsertCustomer(customer);
       if (route.customer_record_id !== savedCustomer.recordId) {
         await this.operational.attachCustomerRecord(route.case_id, savedCustomer.recordId);
+        // Keep the in-flight route synchronized so the very first CASE row can
+        // create its Customers link without waiting for a later webhook event.
+        route = { ...route, customer_record_id: savedCustomer.recordId };
       }
 
       if (!route.root_message_id) {
