@@ -1,4 +1,4 @@
-import type { D1Database, QueueProducer, WorkersAI } from "../platform/cloudflare";
+import type { D1Database, QueueProducer, R2Bucket, WorkersAI } from "../platform/cloudflare";
 import type { LineEventQueueMessage } from "../queues/line-event.types";
 
 export interface Env {
@@ -7,6 +7,7 @@ export interface Env {
   LINE_EVENTS_QUEUE: QueueProducer<LineEventQueueMessage>;
 
   DB: D1Database;
+  MEDIA_BUCKET: R2Bucket;
   AI?: WorkersAI;
   AI_TEXT_MODEL?: string;
   AI_VISION_MODEL?: string;
@@ -28,6 +29,9 @@ export interface Env {
   COMPANY_NAME?: string;
   QUOTE_DEFAULT_VAT_RATE?: string;
   QR_TTL_SECONDS?: string;
+  MEDIA_TTL_SECONDS?: string;
+  VIP_GOLD_MIN_THB?: string;
+  VIP_DIAMOND_MIN_THB?: string;
 }
 
 export function requireEnv(env: Env, key: keyof Env): string {
