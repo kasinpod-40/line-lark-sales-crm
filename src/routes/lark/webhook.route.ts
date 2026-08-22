@@ -37,17 +37,19 @@ function parseMessageEvent(body: UnknownRecord): LarkMessageEvent | null {
   const senderId = isRecord(sender.sender_id) ? sender.sender_id : {};
   const content = parseJsonRecord(asString(message.content)) ?? {};
   const messageId = asString(message.message_id);
-  const rootMessageId = asString(message.root_id) || asString(message.parent_id);
-  if (!messageId || !rootMessageId) return null;
+  if (!messageId) return null;
+  const rootMessageId = asString(message.root_id) || asString(message.parent_id) || null;
   const createTime = asNumber(message.create_time, asNumber(header.create_time, Date.now()));
   return {
     eventId: asString(header.event_id) || `evt-${messageId}`,
     messageId,
     rootMessageId,
+    chatId: asString(message.chat_id),
     senderOpenId: asString(senderId.open_id),
     senderType: asString(sender.sender_type),
     messageType: asString(message.message_type),
     text: asString(content.text),
+    content,
     occurredAt: createTime < 10_000_000_000 ? createTime * 1000 : createTime,
   };
 }
