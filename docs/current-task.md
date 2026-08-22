@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK VIEW READBACK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK VIEW WRITE+READBACK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -91,21 +91,22 @@ Lark Base writes can become visible asynchronously. The runner no longer assumes
 ### 4. `visible_fields` readback identity
 Live target output proved `+view-get-visible-fields` returns canonical field **names**, not `fld...` IDs. The runner now keeps the expected visible-field state in canonical name form.
 
-### 5. `group` readback identity — latest live evidence
-The next live resume proved `+view-get-group` also resolves persisted field references back to canonical field **names**:
+### 5. `group` readback identity
+Live target output also proved `+view-get-group` resolves persisted field references to canonical field **names**. Readback verification keeps names for `visible_fields`, `group`, and `sort`, while tolerating wrapper differences and alternate ID-shaped responses.
 
-```json
-{"data":{"group":[{"desc":false,"field":"customer_stage"}]}}
-```
-
-The runner was still expecting `fld...` IDs for group/sort, so the persisted state was correct but final verification falsely failed.
+### 6. write identity differs from readback identity — latest live evidence
+The `🧠 AI Lead Intelligence` view remained with all fields visible even though the requested subset was correct. The important distinction is now explicit:
+- current official CLI mutation tests for `+view-set-visible-fields`, `+view-set-group`, and `+view-set-sort` send concrete `fld...` field IDs in the API body
+- live target getter output resolves those references back to canonical field names
+- therefore a single representation cannot be used for both mutation payload and readback comparison
 
 Fix verified:
-- canonical readback expectation now keeps **field names** for `visible_fields`, `group`, and `sort`
-- wrapper-name differences remain tolerated (`group` vs `group_config`, `sort` vs `sort_config`)
-- exact array order and `desc` semantics remain enforced
-- helper can canonicalize alternate/legacy `fld...` references back to contract field names when a field-ID map is supplied
-- regression tests include the exact live-shaped `data.group` response from the golden Base
+- mutation payloads for `visible_fields`, `group`, and `sort` are built from current target field IDs
+- readback expectations remain stable contract field names
+- matcher canonicalizes any alternate ID-shaped readback to names before comparison
+- contract objects are not mutated while building API payloads
+- filters remain in their documented name-based form
+- regression tests assert ID-based writes and name-based reads simultaneously
 
 These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
 
@@ -131,15 +132,15 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`986f292980bed88eca61736e99012b2390f4b5cf`
+`e81a9de27c6414cda115776a678f5d643eccf2b9`
 
 GitHub CI:
-- run `32564220502` / run #155
-- job `97010366465`
+- run `32564721159` / run #159
+- job `97011572058`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **63/63 PASS**
+- unit/contract tests: **64/64 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
@@ -169,7 +170,7 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull current branch head containing verified code SHA `986f292980bed88eca61736e99012b2390f4b5cf` or a later docs-only commit containing it.
+1. Pull current branch head containing verified code SHA `e81a9de27c6414cda115776a678f5d643eccf2b9` or a later docs-only commit containing it.
 2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
 3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
 4. Apply the three locked table icons manually in Lark UI.
