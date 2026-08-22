@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / ALL 22 VIEW VISIBILITY MEMBERSHIPS PROVEN CORRECT / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / BASE JS SDK RUNNER NOW HANDLES EXTENSION-FRAME TABLE-CONTEXT READINESS WITH BOUNDED CANONICAL TABLE RESOLUTION / NEXT STEP IS RESTART THE EXISTING LOCAL EXTENSION SERVER, RE-RUN VISIBLE-FIELD READBACK, THEN DO THE REMAINING MANUAL PRESENTATION ORDER + TABLE ICON PASS.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / 0 BUSINESS-DATA MUTATIONS / NEXT STEP IS MANUAL COLUMN-ORDER PASS FOR 15 VIEWS + THREE SIDEBAR TABLE ICONS + VISUAL INSPECTION, THEN OWNER APP/BOT/CLOUDFLARE READINESS AND CONTROLLED E2E.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -85,47 +85,67 @@ The server CLI structure/settings lane completed successfully on the existing go
 
 Lane A no longer calls or final-verifies the unreliable server `visible_fields` mutation endpoint.
 
-## Premium UX Lane B — live visibility membership complete; order capability boundary proven
+## Premium UX Lane B — live visibility membership complete
 
-The first full in-Base JS SDK run completed all 22 Views and produced a crucial live distinction:
-- 22 Views inspected
-- **22/22 Views have the exact requested visible-field membership**
-- 7/22 Views also have the exact requested order
-- 15/22 Views differ only in column order
-- 0 unsupported Views
-- 0 table mutations
-- 0 field-schema mutations
-- 0 record mutations
+The final in-Base JS SDK write/readback pass completed successfully on the same golden Base:
+- `ok=true`
+- `expected_views=22`
+- `membership_views=22`
+- `ordered_views=7`
+- `order_manual_views=15`
+- `mutation_views=0` on the final verification pass
+- `unsupported_views=0`
+- `base_context_table_reads=3`
+- `failures=[]`
+- table mutations: 0
+- field-schema mutations: 0
+- record mutations: 0
 
-The earlier runner incorrectly treated order-only drift as a visibility failure. It then hid/re-showed already-correct fields, but the order remained unchanged. The live evidence proves that `showField()` / `hideField()` control visibility membership, not arbitrary column position.
+This is the authoritative runtime evidence that **all 22 curated Views now have the exact requested visible-field membership**. The remaining 15 differences are order-only presentation drift.
 
-Current official Base JS SDK documentation confirms:
-- `getFieldMetaList()` provides the View field order as readback
-- `getVisibleFieldIdList()` provides visible membership/order readback
-- `showField()` and `hideField()` mutate visibility
-- there is no documented Grid View field-order mutation setter
+The live evidence also confirms that `showField()` / `hideField()` control visibility membership but do not provide an arbitrary field-order setter. Current official Base JS SDK documentation exposes ordered readback (`getFieldMetaList`, `getVisibleFieldIdList`) plus show/hide controls, but no documented Grid View column-order mutation setter.
 
-Therefore the runner now has two separate correctness dimensions:
-1. **Visibility membership** — automated and required for `ok=true`.
-2. **Column order** — read and reported separately; order-only drift is `MANUAL_UI_PASS_REQUIRED`, not a failed visibility mutation.
+Therefore correctness is split into two dimensions:
+1. **Visibility membership — COMPLETE / automated / 22 of 22 pass.**
+2. **Column order — 7 exact / 15 manual UI order passes still required.**
 
-The fixed runner:
-- performs minimal membership reconciliation only (hide excess + show missing)
-- never re-hides/re-shows a View just because its order differs
-- reports `membership_views`, `ordered_views`, `order_manual_views`, `order_mismatches`
-- returns a membership success when all requested visible fields are present and no extras remain
-- preserves fail-closed behavior for a real membership mismatch or missing/unsupported resource
+Do not rerun the visibility mutation to chase order-only differences. The final pass already returned `mutation_views=0`, proving the membership reconciler is now idempotent on the live Base.
 
-## Base JS SDK Extension-frame context readiness
+### Remaining order-only Views
 
-After restarting the local Extension server, one live rerun returned `Missing Table: Customers` even though the same Base had already produced the complete 22-View evidence moments earlier. The old runner used a single eager `getTableMetaList()` snapshot and immediately converted a transient/reconnecting SDK frame into a false missing-table failure.
+Customers:
+- `🧠 AI Lead Intelligence`
 
-The runner now follows the documented canonical resolver path instead:
-- each required business table is resolved with `base.getTableByName(<canonical_name>)`
-- resolution is retried boundedly (8 reads with short backoff) before failure
-- `getTableMetaList()` is no longer the correctness authority for the initial table lookup
-- if resolution still fails, the error includes available table names, current selection table ID, active table name, and the last resolver error so a genuinely wrong Base context is distinguishable from SDK-frame readiness
-- this path is read-only for Base/Table structure; it does not create, rename, delete, or mutate tables
+Chat_Tracking:
+- `💬 Case & Chat Timeline`
+- `⚡ SLA Monitor`
+- `🚨 SLA เกิน 5 นาที`
+- `🟢 SLA Fast`
+- `🤝 แยกตาม Sales`
+- `🧭 Case Lifecycle`
+- `📦 Media & Files`
+- `✅ Resolved Cases`
+
+Sales_Deals:
+- `🏆 Closed Won`
+- `📈 Sales Pipeline`
+- `🧾 Quotations`
+- `💳 Payment Control`
+- `👑 Sales Leaderboard`
+- `📅 Closing Timeline`
+
+The exact expected column order remains the machine-readable authority in `deploy/lark-base-ux-contract.json` and was also emitted by the final live runner under `order_mismatches[].expected`.
+
+## Base table naming / icon incident — resolved
+
+One Extension run correctly diagnosed that the visible table names had temporarily become emoji-prefixed names (`👥 Customers`, `💬 Chat_Tracking`, `💰 Sales_Deals`). Those emoji prefixes were part of the actual table names, not separate sidebar icons, and therefore violated the canonical three-table contract.
+
+The table names were restored to the exact canonical contract:
+- `Customers`
+- `Chat_Tracking`
+- `Sales_Deals`
+
+Do not prefix canonical table names with emoji. Sidebar table icons remain a separate one-time Lark UI presentation pass.
 
 ## Live filter readback arity normalization
 
@@ -152,7 +172,7 @@ Locked sidebar assignments:
 - `Chat_Tracking` → 💬
 - `Sales_Deals` → 💰
 
-Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. Apply these three in Lark UI after automated UX apply. Do not prefix canonical table names with emoji.
+Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. Apply these three in Lark UI after the manual order pass. Do not prefix canonical table names with emoji.
 
 ## Latest verification checkpoint
 
@@ -168,9 +188,7 @@ GitHub CI:
 - unit/contract tests: **72/72 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-Regression coverage locks both:
-- visibility membership vs unsupported order-only drift
-- canonical table resolution with bounded Base JS SDK context-readiness retries and actionable wrong-Base diagnostics
+No source/config/test/migration change was needed for the final successful Lane B runtime pass; the milestone update is documentation-only.
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -199,14 +217,14 @@ Phase C customer sale:
 
 ## Next work
 
-1. Stop the old local `lark:base:ux:visible-ui` server if it is still running, pull the branch head containing verified code SHA `d3b0e81721927822446d27709c27fdecd3ed34f8` (or a later docs-only commit containing it), then restart the same server.
-2. Reopen/refresh the existing Extension from inside the golden Base and run **Apply visible fields** once. Require `ok=true`, `membership_views=22`, `failures=[]`; order-only differences must appear only under `order_mismatches` / `order_manual_views`.
-3. If the Base context still cannot resolve after bounded retries, use the emitted `available_tables`, `selection_table_id`, and `active_table` diagnostics; do not recreate the Base.
-4. Do not rerun visibility mutation to chase order-only differences. Apply the remaining View column order in the Lark UI because the documented SDK exposes no order setter.
-5. Apply the three locked table icons manually in Lark UI.
-6. Visually inspect all 22 curated Views and both Dashboards.
-7. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
-8. Configure secrets/vars, enable callbacks, then run controlled E2E.
+1. Stop the local `lark:base:ux:visible-ui` server; the visibility membership lane is complete and should not be rerun to chase order-only drift.
+2. Manually reorder columns for the 15 `ORDER_UI_REQUIRED` Views to match `deploy/lark-base-ux-contract.json` / the final runner `order_mismatches[].expected` lists.
+3. Apply the three locked sidebar table icons in Lark UI: `Customers` → 👥, `Chat_Tracking` → 💬, `Sales_Deals` → 💰, while preserving the exact canonical table names.
+4. Visually inspect all 22 curated Views and both Dashboards.
+5. Configure the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
+6. Read fresh Cloudflare docs before any Cloudflare source/config change, then bind the existing Worker/D1/R2/Queue/DLQ installation-specific vars/secrets.
+7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
+8. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
 9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
