@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { isNoOpMutationFailure, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaContract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-contract.json"), "utf8"));
@@ -61,14 +62,18 @@ function parseJson(text, label) {
   catch { throw new Error(`${label} returned non-JSON output: ${trimmed.slice(0, 800)}`); }
 }
 
-function runRaw(args, label, { json = true, requireOk = true } = {}) {
+function runRaw(args, label, { json = true, requireOk = true, allowNoOp = false } = {}) {
   const result = spawnSync("lark-cli", args, { encoding: "utf8", env: cliEnv(), maxBuffer: 32 * 1024 * 1024 });
   if (result.error) {
     if (result.error.code === "ENOENT") throw new Error("lark-cli is not installed or not on PATH");
     throw result.error;
   }
   if (result.status !== 0) {
-    let detail = String(result.stderr || result.stdout || "").trim();
+    const rawDetail = String(result.stderr || result.stdout || "").trim();
+    if (allowNoOp && isNoOpMutationFailure(rawDetail)) {
+      return { ok: true, no_op: true, source: "lark_cli_no_operation" };
+    }
+    let detail = rawDetail;
     try {
       const parsed = JSON.parse(detail);
       const error = parsed?.error || {};
@@ -84,6 +89,10 @@ function runRaw(args, label, { json = true, requireOk = true } = {}) {
 
 function runLark(args, label) {
   return runRaw([...args, "--as", "user"], label, { json: true, requireOk: true });
+}
+
+function runLarkMutation(args, label) {
+  return runRaw([...args, "--as", "user"], label, { json: true, requireOk: true, allowNoOp: true });
 }
 
 function verifyUserAuthStatus() {
@@ -172,20 +181,63 @@ function renameView(baseToken, table, from, to) {
   runLark(["base", "+view-rename", "--base-token", baseToken, "--table-id", table, "--view-id", from, "--name", to], `Rename view ${table}.${from}`);
 }
 
-function setViewConfig(baseToken, table, view) {
-  const common = ["base-token", baseToken, "table-id", table, "view-id", view.name];
-  const invoke = (command, json, label) => runLark([
+const viewPropertyCommands = {
+  visible_fields: { get: "+view-get-visible-fields", set: "+view-set-visible-fields" },
+  filter: { get: "+view-get-filter", set: "+view-set-filter" },
+  group: { get: "+view-get-group", set: "+view-set-group" },
+  sort: { get: "+view-get-sort", set: "+view-set-sort" },
+};
+
+function getViewProperty(baseToken, table, viewName, property) {
+  const command = viewPropertyCommands[property]?.get;
+  if (!command) throw new Error(`Unsupported view property read: ${property}`);
+  return runLark([
     "base", command,
     "--base-token", baseToken,
     "--table-id", table,
-    "--view-id", view.name,
-    "--json", JSON.stringify(json),
-  ], `${label} ${table}.${view.name}`);
-  if (view.visible_fields) invoke("+view-set-visible-fields", { visible_fields: view.visible_fields }, "Set visible fields");
-  if (view.filter) invoke("+view-set-filter", view.filter, "Set filter");
-  if (view.group) invoke("+view-set-group", view.group, "Set group");
-  if (view.sort) invoke("+view-set-sort", view.sort, "Set sort");
-  void common;
+    "--view-id", viewName,
+  ], `Read ${property} ${table}.${viewName}`);
+}
+
+function reconcileViewProperty(baseToken, table, viewName, property, desired) {
+  const commands = viewPropertyCommands[property];
+  if (!commands) throw new Error(`Unsupported view property reconcile: ${property}`);
+
+  const before = getViewProperty(baseToken, table, viewName, property);
+  if (viewPropertyMatches(before, desired)) return { changed: 0, unchanged: 1, noOpRecovered: 0 };
+
+  const result = runLarkMutation([
+    "base", commands.set,
+    "--base-token", baseToken,
+    "--table-id", table,
+    "--view-id", viewName,
+    "--json", JSON.stringify(desired),
+  ], `Set ${property} ${table}.${viewName}`);
+
+  const after = getViewProperty(baseToken, table, viewName, property);
+  if (!viewPropertyMatches(after, desired)) {
+    throw new Error(`Readback mismatch after setting ${property} ${table}.${viewName}; current state does not contain the requested configuration`);
+  }
+  return {
+    changed: result?.no_op === true ? 0 : 1,
+    unchanged: 0,
+    noOpRecovered: result?.no_op === true ? 1 : 0,
+  };
+}
+
+function mergePropertyStats(target, result) {
+  target.changed += result.changed;
+  target.unchanged += result.unchanged;
+  target.no_op_recovered += result.noOpRecovered;
+}
+
+function setViewConfig(baseToken, table, view) {
+  const stats = { changed: 0, unchanged: 0, no_op_recovered: 0 };
+  if (view.visible_fields) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", { visible_fields: view.visible_fields }));
+  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter));
+  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group));
+  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort));
+  return stats;
 }
 
 function deleteView(baseToken, table, viewRef) {
@@ -196,6 +248,7 @@ function reconcileViews(baseToken) {
   let created = 0;
   let renamed = 0;
   let deleted = 0;
+  const properties = { changed: 0, unchanged: 0, no_op_recovered: 0 };
   for (const tableContract of uxContract.tables) {
     let existing = listViews(baseToken, tableContract.name);
     const desiredNames = new Set(tableContract.views.map((view) => view.name));
@@ -214,7 +267,10 @@ function reconcileViews(baseToken) {
         created += 1;
         existing = listViews(baseToken, tableContract.name);
       }
-      setViewConfig(baseToken, tableContract.name, view);
+      const result = setViewConfig(baseToken, tableContract.name, view);
+      properties.changed += result.changed;
+      properties.unchanged += result.unchanged;
+      properties.no_op_recovered += result.no_op_recovered;
     }
     if (uxContract.prune_extra_views === true) {
       existing = listViews(baseToken, tableContract.name);
@@ -232,7 +288,7 @@ function reconcileViews(baseToken) {
       throw new Error(`View reconciliation failed for ${tableContract.name}; missing=[${missing.join(", ")}], extras=[${extras.join(", ")}]`);
     }
   }
-  return { created, renamed, deleted };
+  return { created, renamed, deleted, properties };
 }
 
 function createDashboard(baseToken, dashboard) {
