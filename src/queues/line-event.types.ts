@@ -1,7 +1,7 @@
 import type { QueueBatch, QueueMessage, QueueProducer } from "../platform/cloudflare";
 
 export type LineSourceType = "user" | "group" | "room";
-export type LineQueueMessageType = "text" | "image" | "sticker";
+export type LineQueueMessageType = "text" | "image" | "sticker" | "audio" | "file" | "location";
 
 export interface LineEventQueueMessage {
   schema_version: 1;
@@ -22,6 +22,14 @@ export interface LineEventQueueMessage {
     sticker_id?: string;
     content_provider_type?: "line" | "external";
     original_content_url?: string;
+    preview_image_url?: string;
+    file_name?: string;
+    file_size?: number;
+    duration_ms?: number;
+    title?: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
   };
 }
 
