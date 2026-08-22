@@ -6,162 +6,143 @@ Sources:
 - `docs/customer-srs-sow-2026-08-22.md` — full detailed SRS/SOW, created first.
 - PM 5-function summary — sent later and explicitly linked back to the full SRS.
 - `docs/requirements-authority.md` — locked interpretation of precedence.
+- `docs/single-stack-delivery.md` — locked delivery model: one final stack, no DEV/UAT/STAGING/PROD ladder.
 
-## Executive interpretation
+## Executive result
 
-The full SRS was **not** introduced after the 5-function scope. The chronology is the opposite: SRS first, PM summary later.
+The applicable PM + detailed SRS requirements have been closed at the **code-contract level**. The remaining gap is external runtime evidence on the final LINE/Lark/Cloudflare stack.
 
-Therefore:
-- The PM 5-function message is the latest executive/acceptance-priority summary.
-- The SRS remains the detailed specification behind it because the PM explicitly links to it.
-- The current code already covers most of the five PM-level business functions.
-- Remaining items below are **detailed SRS coverage gaps**, not newly introduced later scope.
+This document no longer treats the detailed SRS items as pending engineering features. They are now implemented and must be validated during the controlled E2E.
 
 ## PM 5-function coverage
 
-### 1. Customer Card + AI + Claim
-Implemented at core level:
-- signed LINE webhook + Queue
+### 1. Customer Card + AI + Claim — CODE COVERED
+
+Implemented:
+- signed LINE webhook + Queue ingestion
 - customer/profile resolution
-- AI intent/lead signals
+- AI intent, lead quality and actionable guidance
 - blue new-case Card
 - atomic Claim Case
-- live owned/green Card state
+- green owned Card
+- one Case Owner for KPI/deal attribution
+- authorized human collaboration inside the same Thread
+- actual responder audit per outbound message
+- strict root-chat isolation + visible orange warning
 
-Detailed SRS gaps under this area:
-- align Technical Support / Demo labels and actionable guidance wording where required
-- finalize collaboration/security behavior described in SRS module 4
+### 2. Quote + PromptPay QR — CODE COVERED
 
-### 2. Quote + PromptPay QR
-Implemented at core level:
-- manual Lark quote form because no Product table exists
+Implemented:
+- manual Lark quotation form because no Product table exists
 - Preview/Confirm
 - quotation snapshot persisted in `Sales_Deals` before LINE outbound
 - LINE Flex quotation
+- Customer stage progresses to quotation-sent state
 - QR amount loaded from persisted deal/quote
 - PromptPay payload + high-resolution PNG
 - Preview/Confirm before send
 
-Interpretation of “1-click”:
-- one click enters the sales action workflow
-- the system cannot know product/price automatically without a product/catalog source
+Interpretation of “1-click” remains:
+- one click starts the sales action workflow
+- no catalog/Product table exists, so price/item input must come from Sales
 
-### 3. Smart Deal Closing
-Implemented at core level:
-- `ปิดยอด <amount>` command
+### 3. Smart Deal Closing — CODE COVERED
+
+Implemented:
+- `ปิดยอด <amount>`
+- `ยอดเงิน <amount>`
+- bare amount only as a context-gated candidate, never immediate financial mutation
 - confirmation before mutation
-- Closed Won / Paid state
-- Active Customer update
-- payment confirmation to LINE
-- direct-close snapshot if no quote exists
+- direct Closed Won snapshot when no quote exists
+- Paid / Closed Won state
+- Payment Confirmation to LINE
+- Customer `🏆 Active Customer`
+- configurable VIP Gold/Diamond thresholds
+- preserve current VIP status when thresholds are unset
 
-Detailed SRS gaps:
-- additional safe command variants such as `ยอดเงิน 150000`
-- bare numeric command only with unambiguous case context + confirmation
-- configurable VIP auto-upgrade thresholds; never invent Gold/Diamond thresholds
+### 4. Executive Post-Case Analytics — CODE COVERED
 
-### 4. Executive Post-Case Analytics
-Implemented at core level:
+Implemented:
 - First Response timing
-- Resolution timing
+- canonical <=5-minute Fast / overdue SLA status
+- Resolution timing kept separate from First Response SLA
 - Sales Closed Won aggregate amount/count
-- same root Card becomes resolved report
+- same root Card becomes grey/report-only when resolved
 
-Detailed SRS gap:
-- exact SLA label rule such as <=5 minutes = Fast and overdue representation
+### 5. CRM Multicast — CODE COVERED
 
-### 5. CRM Multicast
-Implemented at core level:
-- VIP/retarget commands/actions
-- Preview/Confirm
-- segment recipient snapshot
-- multicast batches max 500
+Implemented:
+- `ยิงโปร vip`
+- `ยิงโปร retarget`
+- `บรอดแคสต์` menu/dispatcher path
+- segment preview and explicit confirmation
+- strict LINE user-ID filtering
+- recipient snapshot
+- asynchronous Queue dispatch
+- multicast batches <=500
 - deterministic retry keys + D1 batch state
+- observable batch failures
+- safe individual fallback for failed multicast batches
 
-Detailed SRS gaps:
-- additional command alias if required (`บรอดแคสต์`)
-- strict LINE user ID validation
-- safe multicast failure fallback/recovery observability
-- do not represent retries as a guarantee of 100% end-user delivery
+The implementation never claims guaranteed 100% end-user delivery because LINE reachability/block/account state is outside the bridge's control.
 
-## Detailed SRS gaps still requiring engineering work
+## Detailed SRS coverage matrix
 
-### GAP-A — Collaborative Thread permissions
-SRS says Sales, Specialist and Manager can collaborate in the same case Thread and customer-facing replies should reach LINE.
-
-Current code is owner-only for Thread → LINE.
-
-Target interpretation:
-- one owner remains authoritative for case KPI and deal attribution
-- authorized collaborators may reply if SRS behavior is retained
-- actual responder is recorded per outbound message
-- financial/ownership actions remain permission controlled
-
-### GAP-B — Strict root-chat warning
-Current routing is safe because only known case Thread replies are bridged.
-
-Missing SRS behavior:
-- when a real user types in the Sales Inbox root/group chat outside a case Thread, never bridge it to LINE
-- post a visible warning telling the user to use Reply in Thread
-- prevent warning echo loops
-
-### GAP-C — 2-way media
-Current:
-- LINE inbound: text/image/sticker
-- Lark → LINE: text
-
-SRS detail requests broader two-way support:
-- image JPEG/PNG
-- PDF/file
-- audio
-- location/GPS
-- sticker
-
-Need API-supported mappings, size/type limits, download/upload adapters and tests.
-
-### GAP-D — Smart command variants
-Add safe parsing for SRS examples beyond `ปิดยอด <amount>` while always preserving confirmation before mutation.
-
-### GAP-E — VIP progression
-Need configuration-driven thresholds. If unset, preserve existing VIP status.
-
-### GAP-F — SLA exact status
-Add canonical backend/Base/Card representation for Fast/Overdue while keeping First Response and Resolution distinct.
-
-### GAP-G — Broadcast validation/recovery
-Add LINE ID validation, alias handling and observable safe fallback/retry behavior. Never claim guaranteed recipient delivery.
-
-### GAP-H — AI labels/guidance
-Align explicit business labels and actionable suggestion text where needed.
+| SRS area | Code status | Runtime evidence still required |
+|---|---|---|
+| Customer identity / duplicate-case race protection | Implemented | burst-message E2E |
+| AI intent / lead scoring / guidance | Implemented | real message examples |
+| Card blue/green/grey lifecycle | Implemented | Lark render + patch E2E |
+| fast callback architecture | Implemented with immediate HTTP response + `waitUntil()` work | Lark callback timing E2E |
+| multi-screen Card update config | Implemented | verify Lark behavior |
+| collaborative Thread replies | Implemented | Sales/Specialist/Manager E2E |
+| root-chat isolation warning | Implemented | root-message safety test |
+| text bridge | Implemented | two-way E2E |
+| image bridge | Implemented with native/fallback paths | size/type E2E |
+| PDF/file bridge | Implemented with Lark native + LINE HTTPS-link fallback | PDF E2E |
+| audio bridge | Implemented with compatibility fallback | MP3/M4A/unsupported-format E2E |
+| location bridge | Implemented | coordinate E2E |
+| sticker handling | Implemented as safe platform fallback where IDs are not interoperable | E2E |
+| Smart close variants | Implemented | command E2E |
+| Closed Won + Active Customer | Implemented | Base write/readback E2E |
+| VIP progression | Implemented as config-driven | customer threshold values + E2E |
+| SLA <=5m label | Implemented | Base/Card readback |
+| Sales aggregate | Implemented | multiple Closed Won data E2E |
+| broadcast segmentation | Implemented | real Base segment E2E |
+| multicast <=500 / retry/fallback | Implemented | LINE API controlled failure/retry evidence |
+| idempotency / redelivery | Implemented | webhook/Queue/action retry evidence |
 
 ## Architecture interpretation
 
-The SRS contains example implementation technologies. The required outcome/security/reliability is authoritative; a stronger/equivalent Cloudflare-native mechanism may replace server-process-specific wording.
-
-Examples:
-- D1 atomic uniqueness/locking instead of process-local `userCreationLocks` correctness authority
-- public Cloudflare Worker HTTPS ingress instead of adding NGINX solely to match a diagram
-- Queue retry/DLQ/idempotency instead of relying on `uncaughtException` / `unhandledRejection`
-- Worker observability instead of durable local `logs/error.log` / `logs/combined.log`
-- HTTP callback processing instead of WebSocket reconnect when WebSocket delivery is not used
+The SRS includes example server technologies. Required outcome/security/reliability remains authoritative, but the implementation is Cloudflare-native:
+- D1 atomic uniqueness/locking instead of process-local `userCreationLocks`
+- public Cloudflare Worker HTTPS ingress instead of NGINX solely for SSL termination
+- Queue retry/DLQ/idempotency instead of relying on Node process crash handlers
+- Worker/Cloudflare observability instead of durable local `logs/error.log` / `logs/combined.log`
+- HTTP callback delivery rather than introducing Lark WebSocket solely to match example architecture
 
 ## Lark Base
 
-Still exactly three business tables:
+Exactly three business tables:
 1. `Customers`
 2. `Chat_Tracking`
 3. `Sales_Deals`
 
-No Product or separate Quotation table is required for the current accepted flow.
+No Product or separate Quotation table is required for the accepted flow.
 
-All final field/API names use **lower snake_case** per `docs/schema-naming-convention.md`, regardless of TitleCase spelling in the source SRS.
+All field/API names use lower `snake_case` per `docs/schema-naming-convention.md`.
 
-Necessary Quote/QR/routing/AI/message-audit fields stay inside these same three tables where they are business data; operational idempotency/locks/retry state remains in D1.
+Business relations/formulas and operationally required quote/QR/audit fields remain inside the same three tables. Dedupe, locks, retry, routing and expiring media state remain in D1/Queue/R2.
 
-## Before final Base creation
+## Remaining work — runtime only
 
-1. Preserve the already-working PM 5-function core.
-2. Close the detailed SRS gaps that remain applicable.
-3. Finalize the exact snake_case 3-table schema.
-4. Run exact-HEAD CI/typecheck/tests/Wrangler dry-run.
-5. Then create/configure the Base and run the real controlled E2E.
+There is no separate DEV or UAT phase.
+
+1. Provision the one final Lark/LINE/Cloudflare stack.
+2. Create the three-table Base once from `docs/lark-base-schema.md`.
+3. Configure final credentials/bindings.
+4. Run the controlled E2E in `docs/setup.md` on that same final stack.
+5. Fix only real integration mismatches if discovered; pass CI again before rerunning the affected flow.
+6. When the controlled E2E passes, retain the same stack for live operation.
+
+Therefore the current project gap is **external integration verification**, not an intentionally deferred feature backlog.
