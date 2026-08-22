@@ -4,135 +4,117 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PM 5-FUNCTION CORE IS IMPLEMENTED AND PREVIOUSLY VERIFIED; FULL DETAILED SRS COVERAGE STILL HAS GAPS BEFORE FINAL BASE/E2E.**
+**CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / EXACT CODE HEAD CI VERIFIED / WAITING FOR THE SINGLE FINAL-STACK CONTROLLED E2E.**
 
-Important chronology correction:
-- The full customer SRS & SOW existed first.
-- The PM later sent the concise **5 main functions** and explicitly linked back to the full SRS.
-- Therefore the SRS is **not a later scope expansion**. The PM message is the latest executive/acceptance summary of the same project, while the SRS remains the detailed supporting specification.
-
-Read `docs/requirements-authority.md` before interpreting scope.
+There is **no DEV, UAT, STAGING, or PROD environment ladder** for this project. Local work and GitHub CI are code-verification gates only. We will provision the real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it for operation. See `docs/single-stack-delivery.md`.
 
 ## Requirements authority
 
-Primary business acceptance view (latest PM summary):
+Chronology is locked:
+1. Full customer SRS/SOW existed first.
+2. PM later sent the concise five main functions and explicitly linked back to the SRS.
+
+Primary PM acceptance view:
 1. Customer Card + AI + atomic Claim Case.
 2. Quote + PromptPay QR sales tools.
 3. Smart Deal Closing → `Sales_Deals` + Active Customer.
 4. Resolved Card → Case SLA + Sales cumulative revenue/deal count.
 5. VIP / retarget CRM multicast.
 
-Detailed SRS remains applicable for supporting behavior such as Thread security/collaboration, media, callback/reliability semantics, SLA labels, command variants and broadcast validation unless explicitly superseded.
+The detailed SRS remains the supporting specification for collaboration, Thread isolation, media, callback/reliability behavior, command variants, VIP handling, SLA labels and broadcast validation.
 
-## Last verified code layer
+## Exact verified code checkpoint
 
-The code layer implementing the PM 5-function core passed GitHub CI before the requirements chronology correction.
+Last code-bearing verified SHA:
+`ff7a4a67a9637b1478693621156c82283a6eb417`
 
-Verified capabilities included:
-- TypeScript strict typecheck
-- unit tests
-- LINE HMAC + Queue normalization
-- LINE retry-key recovery
-- AI/rule classification
-- Quote calculation and manual quote flow
-- Direct close-deal snapshot
-- PromptPay payload/CRC
-- Lark Card lifecycle
-- Cloudflare Wrangler deploy dry-run bundle
-- npm audit with 0 vulnerabilities in CI install
+GitHub CI:
+- run `32547224715` / run #85
+- job `96967752702`
+- result: **SUCCESS**
+- `npm install --ignore-scripts`: SUCCESS
+- `npm run check`: SUCCESS
+- TypeScript strict typecheck: SUCCESS
+- unit/contract tests: SUCCESS
+- Wrangler deploy dry-run bundle: SUCCESS
+- dependency audit during install: 0 vulnerabilities
 
-Do not infer that this proves every detailed SRS item. Any new code commit requires exact-HEAD CI again.
+Commits after this checkpoint may be documentation-only. If any source/config/test/migration code changes after the verified SHA, exact-HEAD CI must pass again before external setup.
 
-## Product / architecture lock
+## Implemented code coverage
 
-Customers remain in LINE OA. Sales/Support/Manager operate from Lark. One central Sales Inbox group contains one root Case Card per active customer case and the case Thread.
+- LINE HMAC webhook verification, direct-user identity and Queue normalization
+- D1 event/action idempotency, one active case per LINE user and atomic Case Claim
+- LINE profile resolution and customer sync
+- AI/rule classification including purchase/price/support/demo/general intent presentation, lead quality and actionable guidance
+- Lark Case Card lifecycle with Schema 2.0, blue/green/grey state and multi-device update config
+- one central Sales Inbox + one root Case Card + one Thread per case
+- collaborative Thread replies while preserving one Case Owner for KPI/deal attribution
+- strict root-chat isolation with visible orange warning; root messages never bridge to LINE
+- actual responder identity recorded on outbound MESSAGE audit rows
+- two-way text/image/file/PDF/audio/location/sticker-safe mappings with explicit platform fallbacks
+- R2 expiring media assets and D1 media metadata
+- manual Quote → Preview/Confirm → persisted `Sales_Deals` snapshot → LINE Flex
+- persisted amount → QR Preview/Confirm → PromptPay PNG → LINE
+- Smart Close command variants including `ปิดยอด 45000`, `ยอดเงิน 150000` and context-gated bare amount confirmation
+- Closed Won → Payment Confirmation → Customer `🏆 Active Customer`
+- configurable Gold/Diamond VIP thresholds; preserve current status when thresholds are unset
+- First Response SLA with <=5-minute Fast label; Resolution tracked separately
+- Sales cumulative Closed Won amount/count on the same resolved root Card
+- VIP/retarget/broadcast command flow with Preview/Confirm, strict LINE user-ID filtering, Queue dispatch, <=500 multicast batches, retry-key state and safe individual fallback
+- callback work detached from the immediate Lark response using Worker `waitUntil()` where applicable
+
+## Architecture lock
+
+Customers remain in LINE OA. Sales/Support/Manager operate from Lark.
 
 Target:
-`LINE/Lark → Cloudflare Worker → Queue/D1/Workers AI → Lark Messenger/Lark Base/LINE API`
+`LINE/Lark → Cloudflare Worker → Queue/D1/R2/Workers AI → Lark Messenger/Lark Base/LINE API`
 
-Layering:
-`Route → Service → Core → Provider/Repository`
-
-Cloudflare-native reliability remains authoritative where it is equivalent or stronger than server-process wording in the SRS:
-- D1 atomic uniqueness/locking instead of process-local Promise lock authority
-- Queue retry/DLQ/idempotency instead of long-lived-process crash handlers
+Cloudflare-native reliability is authoritative where it provides the required SRS outcome:
+- D1 distributed atomic/unique control instead of process-local Promise lock authority
+- Queue retry/DLQ/idempotency instead of long-running-process crash handlers
 - Worker observability instead of durable local `logs/*.log`
-- HTTP Lark callbacks instead of WebSocket reconnect unless event-delivery strategy changes
-- no NGINX requirement when the Worker itself is the public HTTPS edge
+- HTTPS Worker ingress instead of adding NGINX solely to match a diagram
 
 ## Lark Base lock
 
-Exactly 3 business tables:
+Exactly three business tables:
 1. `Customers`
 2. `Chat_Tracking`
 3. `Sales_Deals`
 
-No Product or separate Quotation table for current scope.
+No Product or separate Quotation table.
 
-All field/API contracts use **lower snake_case**. See `docs/schema-naming-convention.md`.
+All field/API contracts use lower `snake_case`.
 
-Quote remains:
-`Lark Card → manual form → Preview/Confirm → save Sales_Deals snapshot → LINE Flex`
+Use `docs/lark-base-schema.md` as the final Base creation contract.
 
-QR remains:
-`latest persisted deal/quote amount → Preview/Confirm → PromptPay QR → LINE`
+## Single final-stack next step
 
-## Detailed SRS gaps still to close
+Do **not** create DEV/UAT copies.
 
-These were not newly introduced after the PM message; they are detailed SRS requirements that the current code layer does not yet fully satisfy:
-
-1. **Collaborative Thread reply model**
-   - Preserve one case owner for KPI/deal attribution.
-   - Allow authorized Sales/Specialist/Manager collaboration in the same Thread if required by SRS.
-   - Record actual responder identity separately.
-   - Keep financial/ownership actions permission-controlled.
-
-2. **Strict root-chat warning**
-   - Root/group messages outside a case Thread must never bridge to LINE.
-   - Add visible warning directing users to Reply in Thread.
-
-3. **2-way media coverage**
-   - Current coverage is incomplete versus SRS for image/PDF-file/audio/location/sticker in both directions.
-   - Implement supported cross-platform mappings and explicit unsupported/limit behavior.
-
-4. **Smart close command variants**
-   - Add safe variants such as `ยอดเงิน 150000`.
-   - Bare numeric commands require unambiguous context + Preview/Confirm.
-
-5. **VIP auto-upgrade**
-   - SRS requires VIP progression but gives no thresholds.
-   - Use configurable thresholds; if unset, preserve current VIP and never invent values.
-
-6. **SLA exact presentation**
-   - Add the agreed <=5m Fast / overdue representation while keeping First Response separate from Resolution Time.
-
-7. **Broadcast hardening**
-   - Add required command aliases if used.
-   - Validate LINE user IDs.
-   - Add safe multicast failure/fallback observability/recovery.
-   - Do not promise 100% end-user delivery.
-
-8. **AI label/action guidance alignment**
-   - Align explicit Buy Intent / Price Inquiry / Technical Support or Demo / General Inquiry labels and actionable Card guidance where required.
-
-## Next implementation order
-
-1. Close detailed SRS gaps above without breaking the already-implemented PM 5-function core.
-2. Reconcile final snake_case 3-table schema.
-3. Add/extend unit and contract tests.
-4. Run exact-HEAD GitHub CI including Wrangler dry-run and dependency audit evidence.
-5. Only after code gates are green: create/configure Lark Base + LINE/Lark/Cloudflare resources.
-6. Execute one controlled real E2E across the five PM acceptance functions plus detailed SRS guards/media/reliability requirements.
-7. Only then mark Production-ready.
+1. Ensure the latest branch contains no unverified code changes after the verified checkpoint.
+2. Create the real final Lark Base once from `docs/lark-base-schema.md`.
+3. Provision the final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
+4. Apply D1 migrations once and in order.
+5. Configure final LINE/Lark credentials, table IDs, PromptPay target, R2/Queue bindings and public Worker URL.
+6. Keep LINE/Lark event traffic disabled/disconnected until configuration is complete; enable callbacks/webhook only when ready for the controlled E2E.
+7. Execute `docs/setup.md` controlled E2E directly on this final stack.
+8. If any mismatch appears, fix only the root cause, pass CI, then rerun the affected flow on the same stack.
+9. When all acceptance steps pass, mark the same stack `live-ready`; there is no environment promotion or data migration afterward.
 
 ## Handoff read order
 
 1. `AGENTS.md`
 2. `docs/current-task.md`
 3. `docs/requirements-authority.md`
-4. `docs/customer-srs-sow-2026-08-22.md`
-5. `docs/customer-srs-gap-analysis.md`
-6. `docs/schema-naming-convention.md`
-7. current PR #1 exact HEAD + CI for that exact HEAD
+4. `docs/single-stack-delivery.md`
+5. `docs/customer-srs-sow-2026-08-22.md`
+6. `docs/customer-srs-gap-analysis.md`
+7. `docs/schema-naming-convention.md`
+8. `docs/lark-base-schema.md`
+9. `docs/setup.md`
+10. current PR #1 exact HEAD + CI evidence
 
-Never describe the SRS as a later scope expansion again; the PM 5-function message came after it and is the latest executive summary that links back to the SRS.
+Never describe the SRS as a later scope expansion. Never describe the delivery as DEV → UAT → PROD.
