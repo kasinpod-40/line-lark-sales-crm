@@ -10,6 +10,8 @@
   "base_schema_contract": "docs/lark-base-schema.md",
   "base_machine_contract": "deploy/lark-base-contract.json",
   "base_provisioner": "scripts/provision-lark-base.mjs",
+  "base_ux_contract": "deploy/lark-base-ux-contract.json",
+  "base_ux_provisioner": "scripts/provision-lark-base-ux.mjs",
   "d1_migrations": [
     "migrations/0001_operational_state.sql",
     "migrations/0002_srs_media_and_campaign_observability.sql"
