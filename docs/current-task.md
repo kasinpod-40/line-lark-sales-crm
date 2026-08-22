@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CONCRETE TABLE+VIEW ID MUTATION PATH VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / VIEW PROPERTY RESOURCE IDS + DOCUMENTED FIELD-NAME PAYLOAD CONTRACT VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -80,7 +80,7 @@ The UX apply is resume-safe and never recreates the Base or business tables.
 ## Live Lark compatibility incidents — fixed in code so far
 
 ### 1. persisted-state no-op
-Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are recoverable instead of fatal.
+Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are recoverable and still require final readback convergence.
 
 ### 2. nested Select option misclassified as a Field
 A generic recursive parser incorrectly promoted Select options such as `🔥 Hot Lead` into field resources. Resource parsing now reads only the official list collections and field lookup iterates only schema-contract fields.
@@ -89,26 +89,35 @@ A generic recursive parser incorrectly promoted Select options such as `🔥 Hot
 Lark Base writes can become visible asynchronously. The runner no longer assumes immediate read-after-write consistency. Final acceptance uses bounded eventual-consistency polling/backoff, including View and Dashboard resource visibility.
 
 ### 4. `visible_fields` readback identity
-Live target output proved `+view-get-visible-fields` returns canonical field **names**, not `fld...` IDs. The runner now keeps the expected visible-field state in canonical name form.
+Live target output proved `+view-get-visible-fields` returns canonical field **names**, not `fld...` IDs. The runner keeps the expected visible-field state in canonical name form.
 
 ### 5. `group` readback identity
 Live target output also proved `+view-get-group` resolves persisted field references to canonical field **names**. Readback verification keeps names for `visible_fields`, `group`, and `sort`, while tolerating wrapper differences and alternate ID-shaped responses.
 
-### 6. write identity differs from readback identity
-Official CLI mutation tests use concrete `fld...` IDs for `visible_fields`, `group`, and `sort`, while live getters resolve back to field names. Mutation and readback representations are now intentionally separate.
+### 6. field-name mutation contract — corrected after live failure
+The repeated `🧠 AI Lead Intelligence` mismatch showed that converting the desired fields to `fld...` IDs before mutation did not persist the requested subset on the golden Base.
 
-### 7. view-name addressing on property endpoints — latest live evidence
-A repeated `🧠 AI Lead Intelligence` mismatch showed the desired field subset still was not applied even after mutation payloads used field IDs. The remaining identity bug was in the resource path itself: the provisioner was still passing the human View **name** to `--view-id` for property GET/PUT operations and, after creating a View, it even discarded the returned concrete View ID by storing `{ id: "" }` locally.
-
-Official current CLI flags describe View references as ID or name, but the low-level property shortcut directly places the provided `view-id` value into `/views/:view_id/...`. For deterministic live mutation we must not rely on name addressing for those property endpoints.
+The earlier ID-write assumption came from official CLI **unit/mocked tests**, not a live View workflow. Official CLI E2E coverage explicitly says View operations currently lack deterministic live workflow coverage. More importantly, the public current shortcut help itself documents **field names** for all three writes:
+- `+view-set-visible-fields`: `{"visible_fields":["Name","Status"]}`
+- `+view-set-group`: `{"group_config":[{"field":"Status","desc":false}]}`
+- `+view-set-sort`: `{"sort_config":[{"field":"Priority","desc":true}]}`
 
 Fix verified:
+- mutation payloads for `visible_fields`, `group`, and `sort` now stay in canonical field-name form exactly as the current public CLI contract documents
+- readback expectations use the same canonical field names
+- alternate `fld...` ID-shaped readback remains canonicalized back to names by the matcher
+- field-ID lookup remains available for schema/resource validation, but is no longer used to rewrite View property payloads
+- regression test locks the documented name-based mutation contract and input immutability
+
+### 7. concrete resource addressing remains required
+Table and View path coordinates are separate from the field-reference representation inside the payload.
+
+Fix remains locked:
 - schema preflight resolves and requires concrete `tbl...` IDs for all three business tables
-- View list/create/rename/delete/property read/property write all use concrete current `vew...` IDs
-- newly-created View metadata retains the actual returned ID instead of replacing it with an empty placeholder
-- final verification refreshes the live View list and resolves every curated View name back to its current concrete ID before reading properties
-- dashboard/block existence checks also require concrete IDs before continuing
-- regression coverage prevents reintroducing name-based property mutation or the empty-ID placeholder
+- View list/create/rename/delete/property read/property write use concrete current `vew...` IDs
+- newly-created View metadata retains the returned concrete ID
+- final verification refreshes the live View list and resolves every curated View name back to its current ID before reading properties
+- dashboard/block existence checks require concrete IDs before continuing
 
 These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
 
@@ -134,11 +143,11 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`8426bf7202940eea6b89148cf33d043f025a3a8d`
+`ea81d3114d57d3a132b2ed2e5b6a24203f60a457`
 
 GitHub CI:
-- run `32565648487` / run #162
-- job `97013779001`
+- run `32566182262` / run #165
+- job `97015025590`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
@@ -172,7 +181,7 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull current branch head containing verified code SHA `8426bf7202940eea6b89148cf33d043f025a3a8d` or a later docs-only commit containing it.
+1. Pull current branch head containing verified code SHA `ea81d3114d57d3a132b2ed2e5b6a24203f60a457` or a later docs-only commit containing it.
 2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
 3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
 4. Apply the three locked table icons manually in Lark UI.
