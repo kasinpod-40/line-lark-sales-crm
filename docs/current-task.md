@@ -4,237 +4,184 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**CODE INTEGRATION-READY — REAL LARK/LINE E2E NOT RUN YET.**
+**CUSTOMER SRS RECEIVED — PREVIOUS CODE SCOPE PASSED CI, BUT FULL CUSTOMER SRS HAS NEW GAPS.**
 
-The code layer planned for the current customer scope is implemented on Draft PR #1. The next phase is resource provisioning: create the three Lark Base tables, configure Lark/LINE/Cloudflare resources and credentials, then execute the controlled E2E checklist in `docs/setup.md`.
+Customer requirements baseline is now preserved in:
 
-Do **not** call the system production-ready until that real E2E passes.
+- `docs/customer-srs-sow-2026-08-22.md`
+- `docs/customer-srs-gap-analysis.md`
 
-Last code-bearing verified SHA before this documentation checkpoint:
+Do not create the final customer Lark Base from the old schema unchanged yet. Reconcile the customer SRS gaps first, then finalize the exact 3-table schema and run CI again before Base creation/E2E.
+
+The last code-bearing verified checkpoint before the customer SRS was:
 
 `5d72a266b26dd61991edf48251c19be375ee2969`
 
-GitHub CI run: **#29 / job `96880042393` — SUCCESS**
+GitHub CI run #29 / job `96880042393`: SUCCESS.
+A later documentation checkpoint also passed CI run #30 / job `96880480816` with the same code layer.
 
-Verified gates on that code:
+Verified at that code layer:
 - TypeScript strict typecheck: PASS
-- Unit tests: **19/19 PASS**
-- LINE webhook HMAC + queue normalization tests: PASS
-- LINE retry-key `409 already accepted` behavior: PASS
-- AI/rule tests: PASS
-- Quote calculation tests: PASS
-- Direct manual close snapshot tests: PASS
-- PromptPay payload + CRC tests: PASS
-- Lark Card lifecycle tests (NEW / CLAIMED / WON / RESOLVED): PASS
-- Cloudflare Wrangler bundle/deploy dry-run with `nodejs_compat`: PASS
-- npm audit from CI install: 0 vulnerabilities
+- Unit tests: 19/19 PASS
+- LINE webhook HMAC + Queue normalization: PASS
+- LINE retry-key `409 already accepted`: PASS
+- AI/rule classification tests: PASS
+- Quote calculation: PASS
+- Direct close-deal snapshot: PASS
+- PromptPay payload + CRC: PASS
+- Lark Card lifecycle: PASS
+- Wrangler deploy dry-run bundle: PASS
+- npm audit during CI install: 0 vulnerabilities
 
-Any later code commit invalidates this verification marker until CI passes again. Always inspect the current PR HEAD and its workflow run.
+These checks prove the previous agreed scope only. They do **not** prove the newly supplied full customer SRS is complete.
 
-## Purpose
+## Product Goal
 
-Build a LINE-only Sales CRM where:
-- Customers remain entirely in LINE OA.
-- Sales works entirely in Lark.
-- Backend bridges LINE ↔ Lark.
-- One central Lark Sales Inbox group is used.
-- One customer case = one root Card + one Reply-in-Thread conversation.
-- The root Card is the case control center; Thread is the conversation; Lark Base is business CRM storage; D1/Queues hold operational state.
+Customers remain in LINE OA. Sales/Support/Manager work in Lark. One central Lark Sales Inbox group contains one root Case Card per active customer case and a Reply-in-Thread conversation. Lark Base contains business CRM data; D1/Queues contain operational state/idempotency/routing.
 
-## Locked Architecture
+Target architecture for this repo remains cloud-native:
 
-`LINE OA → signed webhook → Cloudflare Queue → LINE consumer → AI/customer/case processing → Lark root Case Card + Thread ↔ LINE`
+`LINE/Lark → Cloudflare Worker → Queue/D1/Workers AI → Lark Messenger/Lark Base/LINE API`
 
-Layering:
+A separate NGINX/Tunnel layer is not required unless deployment later moves behind a private origin server.
 
-`Route → Service → Core → Provider/Repository`
+## Customer SRS — Requirements That Already Exist
 
-Current important modules:
-- `src/routes/line/webhook.route.ts` — LINE signature validation + event normalization.
-- `src/queues/line-event.consumer.ts` — Queue retry boundary.
-- `src/services/case.service.ts` — inbound LINE orchestration.
-- `src/services/lark-event.service.ts` — owner-only Thread → LINE bridge + command detection.
-- `src/services/card-action.service.ts` — claim/quote/QR/close/campaign orchestration.
-- `src/providers/lark/lark.cards.ts` — all Lark Card/form/preview renderers.
-- `src/providers/lark/lark.client.ts` — Lark messaging/image/user API client.
-- `src/providers/line/line.provider.ts` — LINE profile/content/push/multicast/retry-key behavior.
-- `src/providers/line/line.flex.ts` — quotation/payment/payment-confirmation/campaign Flex.
-- `src/storage/operational.repository.ts` — D1 idempotency, routing, drafts, QR assets, campaign batches.
-- `src/storage/lark-base.repository.ts` — exactly three Lark Base business tables.
+- Signed LINE webhook ingestion.
+- Queue decoupling and fast webhook acknowledgment.
+- LINE profile resolution.
+- D1 race protection / one active case per LINE user.
+- AI text classification + rule fallback.
+- Image/payment-slip AI boundary.
+- Lead score / Hot Lead / customer stage / AI summary.
+- Root Lark Case Card blue → green → grey lifecycle.
+- `wide_screen_mode` + `update_multi` on root Case Card.
+- Immediate Lark card callback response with Worker `waitUntil()` background processing.
+- Atomic Claim Case.
+- Manual Quote form → Preview/Confirm → Sales_Deals snapshot → LINE Flex.
+- Persisted Quote/Deal amount → PromptPay QR → LINE.
+- Confirmed `ปิดยอด <amount>` → Closed Won → Active Customer → Payment Confirmation.
+- First Response / Resolution timing and Sales Closed Won aggregate.
+- VIP/retarget campaign Preview/Confirm + multicast batches of 500 + retry/idempotency state.
 
-## Locked Product Decisions
+## Customer SRS — New Gaps To Implement Before Base Creation
 
-1. One Lark Sales Inbox group; do not create one Lark Chat per customer.
-2. Same root Card is updated through lifecycle: `NEW → CLAIMED → IN_PROGRESS → QUOTED → PAYMENT → WON → RESOLVED`.
-3. Claim is atomic; first Sales wins.
-4. Only the assigned Sales can bridge Thread replies/actions to the customer.
-5. Stale financial/card actions on a RESOLVED case are rejected.
-6. WON root Card locks financial actions and leaves only Close Case.
-7. Customers never need Lark access.
-8. Reuse LINE/AI/Queue concepts extracted from `kasinpod-40/omnichannel-commerce-crm`; do not import marketplace/stock/order architecture.
-9. Exactly three Lark Base business tables for current scope; no Product/Quotation table.
-10. Financial outbound actions require Preview/Confirm and idempotent retry behavior.
+### 1. Collaborative Thread permissions
+Customer SRS explicitly allows Sales, Specialist and Manager to reply to the customer from the same Thread.
 
-## Implemented Capabilities
+Current code is owner-only. Required change:
+- Preserve one owner for KPI/Sales attribution.
+- Allow authorized team members to send customer-facing Thread replies.
+- Record actual responder per outbound message.
+- Keep financial/ownership actions permission-controlled.
 
-### 1. LINE inbound + AI + Sales Case
-- Verify `x-line-signature` before enqueue.
-- Accept direct-user LINE text/image/sticker events.
-- Preserve webhook event ID/redelivery metadata.
-- Queue consumer with retry/backoff.
-- D1 event dedupe and one-active-case-per-LINE-user guard.
-- Concurrency recovery if two Queue consumers race to open the same user case.
-- LINE profile resolution with safe fallback name.
-- Optional Workers AI text classification with deterministic rule fallback.
-- Optional image analysis path including payment-slip signal.
-- Customers with Closed Won history retain `Active Customer` business stage.
-- Create blue root Lark Card for new case; later inbound events patch the same Card.
-- Incoming LINE text/image is appended into that case Thread.
+### 2. Strict root-chat warning
+Current root-level group messages are not bridged, which is safe, but they are silently ignored.
 
-### 2. Atomic Claim Case
-`[🙋‍♂️ รับเคสนี้]`
-- D1 conditional UPDATE is the lock authority.
-- First Sales wins.
-- Customer owner fields are updated in Base.
-- Same root Card turns to owned/green state.
-- Non-owner Thread replies/actions are blocked.
+Required:
+- Detect user messages in the configured Sales Inbox outside a known case Thread.
+- Never send them to LINE.
+- Post a visible warning telling the user to use Reply in Thread.
+- Ignore bot warning echoes.
 
-### 3. Thread ↔ LINE
-- Lark event processing only handles replies attached to a known case root message.
-- Bot/app echoes are ignored.
-- Owner text reply sends to the mapped LINE user.
-- First actual Sales→LINE message records First Response SLA.
-- LINE push uses stable `X-Line-Retry-Key`.
-- LINE `409` for an already-accepted retry key is treated as terminal success, allowing local state to recover without duplicate delivery.
-- Sales non-text reply bridging is intentionally not part of current v1; inbound customer images are supported.
+### 3. Full 2-way media
+Current:
+- LINE inbound: text/image/sticker.
+- Lark → LINE: text.
 
-### 4. Manual Quotation — no Product table
-`[🎨 ส่งใบเสนอราคา]`
-- Lark form supports up to 5 manual line items.
-- Quantity × unit price, discount, VAT, shipping and total are calculated in core code.
-- Preview/Confirm required.
-- Confirm persists an immutable quotation snapshot into `Sales_Deals` **before** LINE outbound.
-- LINE Flex quotation is then sent.
-- Stable retry key makes repeat confirmation recoverable.
-- Same root Card becomes QUOTED and displays deal amount.
+Customer SRS requires 2-way image, PDF/file, audio, location/GPS and sticker.
 
-### 5. PromptPay QR from persisted Deal amount
-`[💳 ส่ง QR ชำระเงิน]`
-- Reads latest deal/quotation total from `Sales_Deals`.
-- Prefills amount but allows Sales to correct it before confirmation.
-- Preview/Confirm required.
-- PromptPay EMV payload + CRC generated in core code.
-- 1024px PNG exposed from `/assets/qr/<token>.png`.
-- QR asset token is deterministic per draft so LINE retry request body remains identical.
-- Payment state is stored in `Sales_Deals` before/after outbound.
-- Same root Card becomes PAYMENT.
+Required:
+- Extend LINE normalization/content handling.
+- Extend Lark message parsing/media download.
+- Add safe cross-platform media mapping/sending.
+- Add tests and explicit unsupported/size-limit behavior.
 
-### 6. Smart Deal Closing
-Sales can type e.g. `ปิดยอด 45000` in the case Thread.
-- Command creates a confirmation draft; it never mutates immediately.
-- Confirm uses the latest `Sales_Deals` record if one exists.
-- If no quotation/deal exists, confirmation creates a minimal auditable direct-close `Sales_Deals` snapshot instead of requiring a Product/Quotation table.
-- Deal becomes `Closed Won` / `Paid`.
-- Customer becomes `Active Customer`; lifetime value is recalculated from Closed Won history.
-- LINE Payment Confirmation is sent (not represented as a legal tax invoice/receipt).
-- Same root Card becomes WON and financial buttons are locked.
+### 4. Smart close command variants
+Add safe parsing for customer examples:
+- `ยอดเงิน 150000`
+- bare `30000` only when unambiguously treated as a case command and always Preview/Confirm before mutation.
 
-### 7. Close Case / Executive Card
-`[✅ ปิดเคสนี้]`
-- Case becomes RESOLVED.
-- Same root Card turns report-only/grey.
-- Shows First Response SLA.
-- Shows Resolution time.
-- Shows case deal amount when present.
-- Shows owner cumulative Closed Won amount + deal count.
+### 5. VIP auto-upgrade
+Current flow recalculates lifetime value but does not guess Gold/Diamond thresholds.
 
-### 8. VIP / Retarget Campaign
-Commands/actions support `vip` and `retarget`.
-- Segment recipients are read from `Customers`.
-- Preview shows matched LINE user count.
-- Recipient snapshot is frozen in D1 draft before confirm.
-- Confirm sends LINE Flex campaign in batches of max 500.
-- Each batch has deterministic LINE retry key + D1 batch state.
-- No blind send directly from free-text command.
+Required:
+- Add configurable thresholds, e.g. `VIP_GOLD_MIN_THB`, `VIP_DIAMOND_MIN_THB`.
+- If unset, preserve current VIP value; never invent a threshold.
 
-## Lark Base — Locked 3 Tables
+### 6. SLA presentation
+Add exact customer rule:
+- <=5 minutes → `🟢 Fast (<5m)`
+- otherwise Overdue.
 
-Detailed schema: `docs/lark-base-schema.md`.
+Keep First Response separate from Resolution Time.
 
-### Customers
-Identity/current CRM state, including LINE user ID, profile, stage, VIP, owner, AI signals, last activity and lifetime value.
+### 7. Broadcast semantics
+Add:
+- `บรอดแคสต์` command alias if used as generic entry.
+- strict LINE User ID validation.
+- safe individual fallback only when appropriate after multicast failure.
+- accepted/failed observability.
 
-### Chat_Tracking
-Both CASE and MESSAGE rows, including root-message routing metadata, owner, direction, timestamps, First Response and Resolution SLA.
+Do not claim 100% end-user delivery guarantee; retries/fallback can improve request reliability but cannot guarantee the recipient receives/reads the message.
 
-### Sales_Deals
-Quotation snapshot, totals, QR/payment state and Closed Won history. One Customer may have many Deals; one Case may have historical quotes/deals.
+### 8. AI labels/guidance
+Align explicit customer labels:
+- Buy Intent / Purchase Order
+- Price Inquiry / Quotation Request
+- Technical Support / Demo Request
+- General Inquiry
 
-Do not add Product or Quotation tables for the current scope.
+Add actionable guidance text on Card.
 
-## Operational State — D1, not Lark Base
+## Lark Base — Still Exactly 3 Business Tables
 
-`migrations/0001_operational_state.sql` creates:
-- `event_dedupe`
-- `case_routes`
-- `action_dedupe`
-- `interaction_drafts`
-- `qr_assets`
-- `campaign_batches`
+Customer SRS and project architecture agree on exactly:
+1. `Customers`
+2. `Chat_Tracking`
+3. `Sales_Deals`
 
-A partial unique index enforces only one non-RESOLVED case per LINE user.
+However the customer SRS uses different field names and linked/formula fields from the current code contract. Do not add Product or Quotation tables. Instead reconcile customer-visible names with the extra fields needed for Quote/QR/case routing inside the same three tables.
 
-## Reliability / Safety Rules Implemented
+Before creating the Base, produce a final schema mapping covering:
+- customer SRS display fields (`Customer_ID`, `Name`, `LINE_User_ID`, `Customer_Stage`, `VIP_Status`, `Total_Spend_THB`, links)
+- SLA fields (`Customer_Msg_Time`, `Sales_Reply_Time`, `SLA_Minutes`, `SLA_Status`)
+- Deal fields (`Deal_Value_THB`, `Sales_Rep`, `Deal_Status`, `Pipeline_Stage`, `Closed_At`)
+- required supplemental fields for root/thread routing, AI signals, quotation snapshot, payment/QR state and idempotent workflow history.
 
-- Signed LINE webhook before queue mutation.
-- Webhook/card event dedupe with stale-failure reclaim.
-- Atomic case claim.
-- One-active-case uniqueness.
-- Owner-only Thread bridge and actions.
-- Draft creator checks on confirm/cancel.
-- RESOLVED stale-action rejection.
-- Financial Preview/Confirm.
-- Base-first quote persistence before LINE send.
-- Stable LINE retry UUIDs.
-- LINE 409 accepted-retry recovery.
-- Deterministic QR URL across retries.
-- Campaign recipient snapshot + 500-user batching + per-batch retry state.
-- No secrets committed; deployment config remains example/template only.
+Still only 3 Base tables.
 
-## What Is Still Blocked by External Resources (not unfinished code)
+## Cloud-Native Interpretation of Customer NFR
 
-Real integration validation cannot be run until resources exist:
-1. Lark Base with the exact 3-table schema.
-2. Lark app credentials, bot permissions/event subscriptions and Sales Inbox chat ID.
-3. LINE OA Channel Secret/Access Token and webhook configuration.
-4. Cloudflare D1 + Queue + DLQ + Worker (+ AI binding if desired).
-5. PromptPay target and public Worker URL.
+The customer document includes some long-lived Node/server concepts. For this Worker architecture:
 
-Then follow `docs/setup.md` in order.
+- In-memory `userCreationLocks` must not be correctness authority; D1 atomic uniqueness/transactions remain the distributed race guard.
+- `uncaughtException` / `unhandledRejection` are replaced by per-event error boundaries, Queue retry/DLQ and idempotency.
+- Lark WebSocket auto-reconnect is not applicable while using HTTP webhook callbacks.
+- local `logs/error.log` / `logs/combined.log` are not durable on Workers; use structured Worker observability/logging plus business audit in Base/D1.
+- no separate NGINX reverse proxy is needed for a public Worker unless a future private origin is introduced.
 
-## Controlled E2E Required Before Production
+## Next Implementation Order
 
-1. Health/readiness.
-2. LINE text → blue Card + Thread.
-3. Two-sales atomic claim race.
-4. Owner Thread reply → LINE; non-owner blocked.
-5. Quote manual form → preview → Base → LINE Flex.
-6. QR reads persisted quote → preview → PNG → LINE.
-7. Customer image/payment slip → Thread + AI signal.
-8. `ปิดยอด 45000` both with and without prior quote.
-9. Close Case → SLA + Sales aggregate.
-10. VIP/retarget preview/confirm + batch idempotency.
-11. Webhook/Queue/card/LINE retry and redelivery recovery.
+1. Update collaboration authorization model while preserving one case owner.
+2. Add root-chat isolation warning.
+3. Implement required 2-way media types.
+4. Expand close-command parser safely.
+5. Add configurable VIP upgrade policy.
+6. Add SLA Fast/Overdue labels.
+7. Add broadcast alias/LINE-ID validation/safe fallback semantics.
+8. Align AI labels and actionable guidance.
+9. Reconcile the final 3-table Lark Base schema with customer field names.
+10. Add/extend unit tests and run exact-HEAD CI including Wrangler dry-run.
+11. Only after all gates pass: create Lark Base + external resources and run controlled E2E.
 
-## Future Chat / Handoff Rule
+## Handoff Rule
 
-Before changing code:
-1. Read `AGENTS.md`.
-2. Read this file.
-3. Inspect current PR #1 HEAD and open PR state.
-4. Check the CI run for that exact HEAD.
-5. Never trust an old SHA merely because it appears in chat/docs.
-6. Reuse current modules; do not add duplicate engines/wrappers without a demonstrated missing capability.
-7. After meaningful work, update this file with the last code-bearing verified SHA, CI evidence, blockers and next action.
+Every future chat must read, in order:
+1. `AGENTS.md`
+2. this file
+3. `docs/customer-srs-sow-2026-08-22.md`
+4. `docs/customer-srs-gap-analysis.md`
+5. current PR #1 HEAD + exact CI run
 
-Next action: **create/configure the Lark Base and external resources, then run the controlled E2E once.**
+Never call the full customer SRS complete until the new gaps above are code-complete and exact-HEAD CI is green, then real LINE/Lark/Base E2E is executed.
