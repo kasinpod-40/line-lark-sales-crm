@@ -28,11 +28,49 @@ test('view property readback matcher tolerates Lark CLI response wrappers but pr
   const payload = {
     ok: true,
     visible_fields: {
-      visible_fields: ['fld_customer', 'fld_display', 'fld_quality']
+      visible_fields: ['customer_id', 'display_name', 'lead_quality']
     }
   };
-  assert.equal(viewPropertyMatches(payload, { visible_fields: ['fld_customer', 'fld_display', 'fld_quality'] }), true);
-  assert.equal(viewPropertyMatches(payload, { visible_fields: ['fld_display', 'fld_customer', 'fld_quality'] }), false);
+  assert.equal(viewPropertyMatches(payload, { visible_fields: ['customer_id', 'display_name', 'lead_quality'] }), true);
+  assert.equal(viewPropertyMatches(payload, { visible_fields: ['display_name', 'customer_id', 'lead_quality'] }), false);
+});
+
+test('view property matcher accepts live visible_fields response under data wrapper using field names', async () => {
+  const { viewPropertyMatches } = await loadHelpers();
+  const payload = {
+    ok: true,
+    identity: 'user',
+    data: {
+      visible_fields: [
+        'customer_id',
+        'display_name',
+        'customer_stage',
+        'lead_quality',
+        'lead_score',
+        'vip_status',
+        'total_spend_thb',
+        'assigned_sales_name',
+        'ai_intent_label',
+        'last_message_at',
+        'updated_at'
+      ]
+    }
+  };
+  assert.equal(viewPropertyMatches(payload, {
+    visible_fields: [
+      'customer_id',
+      'display_name',
+      'customer_stage',
+      'lead_quality',
+      'lead_score',
+      'vip_status',
+      'total_spend_thb',
+      'assigned_sales_name',
+      'ai_intent_label',
+      'last_message_at',
+      'updated_at'
+    ]
+  }), true);
 });
 
 test('view property readback matcher accepts nested filter/group/sort envelopes from current CLI', async () => {
@@ -42,7 +80,7 @@ test('view property readback matcher accepts nested filter/group/sort envelopes 
   assert.equal(viewPropertyMatches({ ok: true, sort: [{ field: 'fld_updated', desc: true }] }, { sort_config: [{ field: 'fld_updated', desc: true }] }), true);
 });
 
-test('readback desired maps contract field names to current Lark field IDs for visible/group/sort', async () => {
+test('readback desired preserves visible field names while mapping group and sort to current field IDs', async () => {
   const { readbackDesiredForViewProperty } = await loadHelpers();
   const ids = {
     customer_id: 'fld_customer',
@@ -52,7 +90,7 @@ test('readback desired maps contract field names to current Lark field IDs for v
   };
   assert.deepEqual(
     readbackDesiredForViewProperty('visible_fields', { visible_fields: ['customer_id', 'display_name'] }, ids),
-    { visible_fields: ['fld_customer', 'fld_display'] }
+    { visible_fields: ['customer_id', 'display_name'] }
   );
   assert.deepEqual(
     readbackDesiredForViewProperty('group', { group_config: [{ field: 'customer_stage', desc: false }] }, ids),
