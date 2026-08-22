@@ -3,7 +3,7 @@ import { isRecord, asString, asNumber, asBoolean } from "../utils/json";
 import type { AIAnalysisResult, ActionIntent, BuyerIntent, CustomerStage } from "./ai.types";
 import { analyzeByRules } from "./rule-engine";
 
-const intents = new Set<ActionIntent>(["greeting","general_inquiry","ask_price","ask_discount","product_info","product_order","payment_request","payment_slip","delivery_address","delivery_question","lost","support","small_talk","image_received","unknown"]);
+const intents = new Set<ActionIntent>(["greeting","general_inquiry","ask_price","ask_discount","product_info","product_order","payment_request","payment_slip","delivery_address","delivery_question","demo_request","lost","support","small_talk","image_received","unknown"]);
 const buyers = new Set<BuyerIntent>(["Just Browsing","Interested","Purchase Intent","Ready To Buy"]);
 const stages = new Set<CustomerStage>(["New Lead","Interested","Negotiating","Closing","Won","Lost"]);
 
@@ -39,7 +39,7 @@ export async function analyzeIncomingText(env: Env, text: string): Promise<AIAna
     const model = env.AI_TEXT_MODEL?.trim() || "@cf/meta/llama-3.1-8b-instruct-fast";
     const output = await env.AI.run(model, {
       messages: [
-        { role: "system", content: "You classify LINE sales-chat messages. Return JSON only with intent, buyer_intent, customer_stage, lead_score (0-100), hot_lead, ai_summary, confidence (0-1). intent must be one of greeting,general_inquiry,ask_price,ask_discount,product_info,product_order,payment_request,payment_slip,delivery_address,delivery_question,lost,support,small_talk,image_received,unknown. buyer_intent must be Just Browsing, Interested, Purchase Intent, or Ready To Buy. customer_stage must be New Lead, Interested, Negotiating, Closing, Won, or Lost. Preserve Thai meaning and never invent price/payment facts." },
+        { role: "system", content: "You classify LINE sales/support chat messages. Return JSON only with intent, buyer_intent, customer_stage, lead_score (0-100), hot_lead, ai_summary, confidence (0-1). intent must be one of greeting,general_inquiry,ask_price,ask_discount,product_info,product_order,payment_request,payment_slip,delivery_address,delivery_question,demo_request,lost,support,small_talk,image_received,unknown. Use demo_request for demo/สาธิต/nัดเดโม่ requests and support for technical/support issues. buyer_intent must be Just Browsing, Interested, Purchase Intent, or Ready To Buy. customer_stage must be New Lead, Interested, Negotiating, Closing, Won, or Lost. Preserve Thai meaning and never invent price/payment facts." },
         { role: "user", content: text.slice(0, 4000) },
       ],
       temperature: 0.1,
