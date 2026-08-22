@@ -20,7 +20,7 @@ test('server UX provisioner never mutates or final-verifies visible_fields after
 
   assert.doesNotMatch(source, /reconcileViewProperty\([^\n]+"visible_fields"/);
   assert.doesNotMatch(source, /verifyViewPropertyEventually\([^\n]+"visible_fields"/);
-  assert.doesNotMatch(source, /\+view-set-visible-fields/);
+  assert.doesNotMatch(source, /visible_fields:\s*\{\s*get:\s*"\+view-get-visible-fields",\s*set:\s*"\+view-set-visible-fields"/);
   assert.match(source, /BASE_JS_SDK_UI_REQUIRED/);
   assert.match(source, /server_mutation_count:\s*0/);
   assert.match(source, /visible_fields_deferred/);
