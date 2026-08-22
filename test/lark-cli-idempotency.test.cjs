@@ -118,6 +118,36 @@ test('view property readback matcher accepts nested filter/group/sort envelopes 
   assert.equal(viewPropertyMatches({ ok: true, sort: [{ field: 'updated_at', desc: true }] }, { sort_config: [{ field: 'updated_at', desc: true }] }), true);
 });
 
+test('view property matcher treats live unary empty filters with trailing null as semantically identical', async () => {
+  const { viewPropertyMatches } = await loadHelpers();
+  const actual = {
+    ok: true,
+    identity: 'user',
+    data: {
+      filter: {
+        logic: 'and',
+        conditions: [
+          ['record_type', 'intersects', ['CASE']],
+          ['first_response_seconds', 'non_empty', null],
+          ['first_response_seconds', '<=', 300]
+        ]
+      }
+    }
+  };
+  const expected = {
+    logic: 'and',
+    conditions: [
+      ['record_type', 'intersects', ['CASE']],
+      ['first_response_seconds', 'non_empty'],
+      ['first_response_seconds', '<=', 300]
+    ]
+  };
+
+  assert.equal(viewPropertyMatches(actual, expected), true);
+  assert.equal(viewPropertyMatches({ filter: { logic: 'and', conditions: [['customer_id', 'empty', null]] } }, { logic: 'and', conditions: [['customer_id', 'empty']] }), true);
+  assert.equal(viewPropertyMatches({ filter: { logic: 'and', conditions: [['first_response_seconds', '<=', null]] } }, { logic: 'and', conditions: [['first_response_seconds', '<=']] }), false);
+});
+
 test('readback desired keeps visible, group and sort field references in canonical name form', async () => {
   const { readbackDesiredForViewProperty } = await loadHelpers();
   const ids = {
