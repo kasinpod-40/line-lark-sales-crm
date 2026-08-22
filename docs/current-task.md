@@ -6,7 +6,9 @@ Last updated: 2026-08-22 (ICT)
 
 **CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / EXACT CODE HEAD CI VERIFIED / WAITING FOR THE SINGLE FINAL-STACK CONTROLLED E2E.**
 
-There is **no DEV, UAT, STAGING, or PROD environment ladder** for this project. Local work and GitHub CI are code-verification gates only. We will provision the real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it for operation. See `docs/single-stack-delivery.md`.
+There is **no DEV, UAT, STAGING, or PROD environment ladder** for our implementation. Local work and GitHub CI are code-verification gates only. We will provision our real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it as the product's golden/reference stack. See `docs/single-stack-delivery.md`.
+
+The commercial model is also locked: once our golden stack is complete, a sold customer receives a fresh installation of the **same verified product** in customer-specific LINE/Lark/Cloudflare resources. We change configuration/secrets/resource IDs, not the business logic. See `docs/customer-deployment-model.md`.
 
 ## Requirements authority
 
@@ -77,6 +79,22 @@ Cloudflare-native reliability is authoritative where it provides the required SR
 - Worker observability instead of durable local `logs/*.log`
 - HTTPS Worker ingress instead of adding NGINX solely to match a diagram
 
+## Reusable product / golden-stack lock
+
+Our own completed installation is the canonical **golden/reference stack**, not a disposable DEV environment.
+
+For each sold customer:
+- use the same verified application release/SHA
+- create the same 3-table Base contract
+- apply the same D1 migrations
+- use the same Card/Thread/Quote/QR/Deal/SLA/Broadcast logic
+- provide customer-specific LINE/Lark/PromptPay/Cloudflare configuration through secrets, vars and bindings
+- never hard-code customer credentials, Base/table IDs, chat IDs or resource IDs in source
+- avoid per-customer code forks; reusable variations should be configuration/features in the main product where feasible
+- run the same controlled E2E on the customer's final installation before handoff
+
+Our golden stack must not contain real customer credentials/data merely to serve as a deployment template.
+
 ## Lark Base lock
 
 Exactly three business tables:
@@ -92,17 +110,17 @@ Use `docs/lark-base-schema.md` as the final Base creation contract.
 
 ## Single final-stack next step
 
-Do **not** create DEV/UAT copies.
+Do **not** create DEV/UAT copies for our golden implementation.
 
 1. Ensure the latest branch contains no unverified code changes after the verified checkpoint.
-2. Create the real final Lark Base once from `docs/lark-base-schema.md`.
-3. Provision the final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
+2. Create our real final Lark Base once from `docs/lark-base-schema.md`.
+3. Provision our final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
 4. Apply D1 migrations once and in order.
 5. Configure final LINE/Lark credentials, table IDs, PromptPay target, R2/Queue bindings and public Worker URL.
 6. Keep LINE/Lark event traffic disabled/disconnected until configuration is complete; enable callbacks/webhook only when ready for the controlled E2E.
-7. Execute `docs/setup.md` controlled E2E directly on this final stack.
+7. Execute `docs/setup.md` controlled E2E directly on this final golden stack.
 8. If any mismatch appears, fix only the root cause, pass CI, then rerun the affected flow on the same stack.
-9. When all acceptance steps pass, mark the same stack `live-ready`; there is no environment promotion or data migration afterward.
+9. When all acceptance steps pass, mark the same stack `live-ready` and `reusable-ready`; there is no environment promotion or data migration afterward.
 
 ## Handoff read order
 
@@ -110,11 +128,12 @@ Do **not** create DEV/UAT copies.
 2. `docs/current-task.md`
 3. `docs/requirements-authority.md`
 4. `docs/single-stack-delivery.md`
-5. `docs/customer-srs-sow-2026-08-22.md`
-6. `docs/customer-srs-gap-analysis.md`
-7. `docs/schema-naming-convention.md`
-8. `docs/lark-base-schema.md`
-9. `docs/setup.md`
-10. current PR #1 exact HEAD + CI evidence
+5. `docs/customer-deployment-model.md`
+6. `docs/customer-srs-sow-2026-08-22.md`
+7. `docs/customer-srs-gap-analysis.md`
+8. `docs/schema-naming-convention.md`
+9. `docs/lark-base-schema.md`
+10. `docs/setup.md`
+11. current PR #1 exact HEAD + CI evidence
 
-Never describe the SRS as a later scope expansion. Never describe the delivery as DEV → UAT → PROD.
+Never describe the SRS as a later scope expansion. Never describe our delivery as DEV → UAT → PROD. Never treat a customer installation as a reason to fork the core business logic.
