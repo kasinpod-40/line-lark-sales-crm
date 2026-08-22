@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED AND VERIFIED / R2 BLOCKED ONLY BY ACCOUNT ENTITLEMENT 10042 / WORKER NOT YET DEPLOYED / NEXT STEP IS ENABLE R2, CREATE THE DEDICATED MEDIA BUCKET, COMPLETE INSTALL-SPECIFIC WRANGLER CONFIG + LARK APP/BOT/SALES INBOX, THEN DEPLOY AND REQUIRE `/health` READY BEFORE CALLBACKS.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / MEDIA ARCHITECTURE CHANGED TO LARK-FIRST WITH D1-BACKED EXPIRING PROXY METADATA / R2 IS NO LONGER REQUIRED / SOURCE COMMIT CREATED AND AWAITING EXACT-HEAD CI / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -32,138 +32,64 @@ Exactly three Lark Base business tables:
 
 All API field names are lower `snake_case`. No Product table and no separate Quotation table.
 
-Canonical assets:
-- `deploy/product-manifest.json`
-- `deploy/lark-base-contract.json`
-- `scripts/provision-lark-base.mjs`
-- `deploy/lark-base-ux-contract.json`
-- `scripts/provision-lark-base-ux.mjs`
-- `scripts/lark-base-visible-fields-ui-server.mjs`
-- `scripts/lark-base-visible-fields-ui.browser.js`
-- `scripts/lark-cli-idempotency.mjs`
-- `scripts/lark-cli-resource-list.mjs`
-- `scripts/lark-eventual-reconcile.mjs`
+## Personal golden Base — current authority
 
-## Personal golden Base — schema complete
+Latest uploaded `.base` snapshot is the current runtime/presentation authority. It confirms exactly three business tables, 22 curated Views, 2 dashboards and 23 dashboard blocks.
 
-The owner manually created the Base shell and the deterministic schema provisioner reconciled it successfully without recreating the Base.
+The latest snapshot currently displays the three table names with emoji prefixes:
+- `👥 Customers`
+- `💬 Chat_Tracking`
+- `💰 Sales_Deals`
 
-Confirmed:
-- `Customers` reused
-- `Chat_Tracking` created
-- `Sales_Deals` created
-- required fields, links/backlinks and deferred formulas verified
-- final schema apply returned `ok=true`
-- concrete personal Base/table IDs remain installation config and are not committed
+Runtime repositories are configured by concrete table IDs, so this presentation-name drift is not assumed to break runtime. Do not rerun the completed UX lanes and do not rename/delete/recreate tables merely to satisfy an older name-only expectation. Provisioning/name-based tooling must be assessed separately if it is run again.
 
-## Premium UX contract
+## Premium UX — complete for runtime acceptance
 
-The supplied customer demo is only a presentation reference. The golden product is intentionally richer:
-- 22 curated Views across the three tables
-- intentional Thai/English business labels with emoji icons
-- default/localized Views reconciled away
-- explicit visible fields, filters, groups and sorts
-- Customer Journey / Case Lifecycle / Sales Pipeline Kanban coverage
-- 2 dashboards / 23 blocks:
-  - `🚀 Executive CRM Command Center`
-  - `⚡ Sales Ops & SLA Control Room`
+Lane A server structure/settings apply completed successfully. Lane B final in-Base JS SDK verification returned:
+- expected Views: 22
+- visible-field membership: 22/22
+- exact order: 7
+- order-only drift: 15
+- unsupported: 0
+- failures: []
+- final mutation pass: 0
 
-## Premium UX Lane A — live complete
-
-The server CLI structure/settings lane completed successfully on the existing golden Base with no Base recreation:
-- `ok=true`
-- 22 expected Views
-- 6 Views created in the final resume
-- 1 View renamed
-- 0 Views deleted in the final resume
-- View properties: 14 changed / 31 unchanged / 0 no-op recovered
-- 22 visible-field configs intentionally deferred to the in-Base JS SDK lane
-- 45 verification reads
-- 2 dashboards created
-- 23 dashboard blocks created
-- table icons remain a UI-only presentation detail because the supported table API exposes no sidebar-icon setter
-
-Lane A no longer calls or final-verifies the unreliable server `visible_fields` mutation endpoint.
-
-## Premium UX Lane B — live visibility membership complete
-
-The final in-Base JS SDK write/readback pass completed successfully on the same golden Base:
-- `ok=true`
-- `expected_views=22`
-- `membership_views=22`
-- `ordered_views=7`
-- `order_manual_views=15`
-- `mutation_views=0` on the final verification pass
-- `unsupported_views=0`
-- `base_context_table_reads=3`
-- `failures=[]`
-- table mutations: 0
-- field-schema mutations: 0
-- record mutations: 0
-
-This is the authoritative runtime evidence that **all 22 curated Views have the exact requested visible-field membership**. The remaining 15 differences are order-only presentation drift.
-
-The live evidence confirms that `showField()` / `hideField()` control visibility membership but do not provide an arbitrary field-order setter. Current official Base JS SDK documentation exposes ordered readback (`getFieldMetaList`, `getVisibleFieldIdList`) plus show/hide controls, but no documented Grid View column-order mutation setter.
-
-### Column-order acceptance decision — locked
-
-The owner explicitly accepted the current column order and does not require manual reordering of the remaining 15 Views.
-
-Therefore:
-- **Visibility membership — COMPLETE / automated / 22 of 22 pass.**
-- **Column order — 7 exact / 15 order-only drifts ACCEPTED AS NON-BLOCKING.**
-- No manual reorder work is required.
-- Do not rerun the visibility mutation to chase order-only differences.
-- Do not block App/Bot/Cloudflare readiness or controlled E2E on column order.
-- The UX contract keeps the preferred order as a presentation reference only; it is not a runtime/business-correctness gate.
-
-## Base table naming / icon incident — resolved
-
-One Extension run correctly diagnosed that the visible table names had temporarily become emoji-prefixed names (`👥 Customers`, `💬 Chat_Tracking`, `💰 Sales_Deals`). Those emoji prefixes were part of the actual table names, not separate sidebar icons, and therefore violated the canonical three-table contract.
-
-The canonical contract remains:
-- `Customers`
-- `Chat_Tracking`
-- `Sales_Deals`
-
-Do not prefix canonical table names with emoji. Sidebar table icons are optional presentation-only UI polish and are not a runtime blocker.
+Owner accepted the 15 order-only differences as non-blocking. No manual reorder is required and Lane B must not be rerun merely to chase order.
 
 ## Dedicated Cloudflare resources — locked
 
-The owner explicitly requires every Cloudflare resource for this product to be dedicated to this project. Do not reuse or bind BNK, legacy CRM, or Social MKT resources.
+All Cloudflare resources for this product must be dedicated to this project. Never bind BNK, legacy CRM or Social MKT resources.
 
-Dedicated resource names:
+Dedicated runtime resources now required:
 - Worker: `line-lark-sales-crm`
 - D1: `line-lark-sales-crm`
-- R2: `line-lark-sales-crm-media`
 - Queue: `line-lark-sales-crm-events`
 - DLQ: `line-lark-sales-crm-events-dlq`
+- Workers AI binding: optional
 
-Existing resources with names beginning `bnk-`, `crm-`, or `social-mkt-` are out of scope and must remain untouched.
+**R2 is not required by the current product architecture.** Do not create or bind an R2 bucket merely because an earlier draft used one.
 
 ## Cloudflare runtime provisioning — live state
 
-Verified on the owner's Cloudflare account:
-- dedicated D1 `line-lark-sales-crm` created successfully in APAC
-- dedicated Queue `line-lark-sales-crm-events` created successfully
-- dedicated DLQ `line-lark-sales-crm-events-dlq` created successfully
-- Queue/DLQ currently have no producers/consumers because the project Worker has not been deployed yet
-- Worker `line-lark-sales-crm` does not yet exist; this is intentional until bindings/secrets/readiness config are complete
-- R2 API returns `10042` / not entitled; account-level R2 must be enabled before `line-lark-sales-crm-media` can be created
+Verified live state:
+- dedicated D1 created successfully in APAC
+- dedicated Queue created successfully
+- dedicated DLQ created successfully
+- Queue/DLQ have no producer/consumer yet because Worker has not been deployed
+- Worker does not yet exist
+- account-level R2 returns code `10042`, but this is no longer a deployment blocker because R2 has been removed from the required architecture
 
-The local install-specific `wrangler.jsonc` is Git-ignored. It currently binds the dedicated D1 and Queue/DLQ so migrations can target the correct project resources without committing installation IDs.
+The local install-specific `wrangler.jsonc` is Git-ignored. It must retain only this project's D1 + Queue/DLQ + optional AI bindings; any local R2 stanza from an earlier draft should be removed.
 
 ### D1 migration milestone — complete
 
-The dedicated D1 was empty before migration except for Cloudflare's `_cf_KV` table.
-
-Migration apply completed successfully in canonical manifest order:
+Applied in canonical order:
 1. `0001_operational_state.sql` — success
 2. `0002_srs_media_and_campaign_observability.sql` — success
 
-Post-apply `wrangler d1 migrations list ... --remote` returned `No migrations to apply!`.
+Post-apply migration list returned `No migrations to apply!`.
 
-Verified remote tables now include:
+Verified remote tables include:
 - `_cf_KV`
 - `action_dedupe`
 - `campaign_batches`
@@ -175,90 +101,63 @@ Verified remote tables now include:
 - `qr_assets`
 - `sqlite_sequence`
 
-A pre-apply migration-list request returned Cloudflare code `7403`, but the authoritative apply on the same target succeeded, the post-apply migration list is clean, and direct schema readback confirms the expected tables. No rollback or re-apply is required.
+Do not reapply or rewrite the already-live migration files.
 
-External callbacks remain disabled until `/health` is HTTP 200 with `configuration.ready=true`.
+## Lark-first media architecture — locked
 
-## Live filter readback arity normalization
+The customer-facing system is Lark-first and D1 remains invisible technical state.
 
-During Lane A, `Chat_Tracking.🟢 SLA Fast` reached a semantically correct persisted filter but final verification rejected it because Lark read back unary `non_empty` as:
+Media behavior:
+- LINE → Lark: Worker downloads permitted LINE media and uploads it directly into the Case Thread. Lark stores the message resource. There is no R2 fallback copy.
+- If native Lark image upload fails, image delivery may fall back to a Lark file message; if Lark delivery still fails, Queue retry/DLQ handles the failure rather than silently persisting a second object copy elsewhere.
+- Lark → LINE: Worker reads the Lark message resource, registers an expiring D1 `media_assets` authorization record, and sends LINE a public HTTPS `/assets/media/<token>` URL when LINE requires a fetchable media URL or file link.
+- `/assets/media/<token>` resolves the D1 authorization, then fetches the resource from Lark on demand with the Internal App. File bytes remain authoritative in Lark.
+- `MEDIA_TTL_SECONDS` remains as the expiring proxy-token lifetime; it no longer describes R2 object retention.
+- D1 remains the authority for atomic claim, webhook/action dedupe, route state, drafts, QR metadata, campaign state and expiring media-proxy metadata.
 
-`["first_response_seconds", "non_empty", null]`
+## Source change awaiting CI
 
-while the deterministic contract uses:
+A source/config/test change was created to remove the R2 runtime dependency and make Lark message resources the bridge media authority.
 
-`["first_response_seconds", "non_empty"]`
+Changed areas include:
+- `Env` no longer requires `MEDIA_BUCKET`
+- readiness no longer blocks on R2
+- `MediaAssetService` stores Lark resource locators in D1 instead of media bytes in R2
+- public media route proxies authorized Lark resources
+- LINE → Lark no longer uses R2 fallback
+- Lark → LINE uses the Lark-backed proxy URL
+- canonical manifest and Wrangler example no longer contain R2 binding
+- tests cover no-R2 readiness and Lark media-locator encoding
 
-Those forms are semantically identical. The shared View matcher canonicalizes only the unary `empty` / `non_empty` operators by dropping a trailing `null` before comparison. Binary/ternary operators are not weakened.
+Exact source commit must pass CI before any Worker deployment or callback mutation.
 
 ## Terminal operator-safety rule — locked
 
-**Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell.**
-
-Reason: a non-zero child process would exit the interactive shell and produce `[Process completed]`.
-
-## Table icons
-
-Preferred sidebar assignments:
-- `Customers` → 👥
-- `Chat_Tracking` → 💬
-- `Sales_Deals` → 💰
-
-Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. These icons are optional presentation polish and must not be implemented by prefixing canonical table names with emoji.
-
-## Latest verification checkpoint
-
-Latest code/config-bearing verified SHA:
-`a2f652565548b164c8c17496e3b2471c93426921`
-
-GitHub CI:
-- run `32570641153` / run #187
-- job `97025500916`
-- result: **SUCCESS**
-- dependency audit: **0 vulnerabilities**
-- TypeScript strict typecheck: **PASS**
-- unit/contract tests: **72/72 PASS**
-- Wrangler `4.125.0` deploy dry-run: **PASS**
-
-Cloudflare D1/Queue/DLQ creation and D1 migration application are runtime provisioning milestones, not source/config/test/migration-file changes. The current-task update that records them is documentation-only.
-
-Any future source/config/test/migration-file change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
+Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell. A non-zero child process can terminate the interactive shell and produce `[Process completed]`.
 
 ## Delivery model — locked
 
 Phase A now:
 - owner's personal Lark workspace/Base
-- owner-controlled Lark App/Bot and `LINE Sales Inbox`
-- dedicated project-specific Cloudflare Worker/D1/R2/Queue/DLQ in the owner's existing Cloudflare account
+- owner-controlled Lark Internal App/Bot and `LINE Sales Inbox`
+- dedicated project Worker/D1/Queue/DLQ in owner's Cloudflare account
+- Lark message resources as media authority
 - controlled reference/test LINE OA
-- no real customer production credentials/business data in private reference Base
+- no real customer production credentials/business data in the private reference installation
 
-Phase B when PM formally starts:
-- Cloudflare account ownership remains the owner's infrastructure unless the commercial agreement explicitly changes it
-- use the same verified release and the same dedicated product resource pattern
-- change/transfer only Lark-controlled resources as required
-- replace only Lark-specific credentials/resource IDs/configuration
-- require `/health` ready and rerun affected E2E before PM presentation
-
-This is not a DEV → PROD promotion.
-
-Phase C customer sale:
-- same verified product blueprint/release/schema/migrations/workflow
-- customer-specific values are config/secrets/bindings
-- no per-customer business-logic fork
-- customer installations must not reuse unrelated project resources
+PM/customer installations use the same verified release and resource pattern. Customer-specific credentials/resource IDs remain config only; no per-customer business-logic fork.
 
 ## Next work
 
-1. Enable R2 at the Cloudflare account level, then create only the dedicated bucket `line-lark-sales-crm-media`; do not recreate D1/Queue/DLQ.
-2. Add the dedicated `MEDIA_BUCKET` R2 binding and optional `AI` binding to the local untracked `wrangler.jsonc`.
-3. Configure/verify the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
-4. Complete local installation vars for the existing golden Base and Sales Inbox.
-5. Put the six required secrets with Wrangler without committing their values; add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
-6. Deploy the dedicated Worker `line-lark-sales-crm` for the first time with D1/R2/Queue/DLQ bindings.
-7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
-8. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
-9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Wait for exact-head GitHub CI for the Lark-first/no-R2 source change; do not deploy before it is green.
+2. Update local untracked `wrangler.jsonc` to remove any R2 binding and retain dedicated D1 + Queue/DLQ + optional AI.
+3. Configure/verify owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep callbacks disabled.
+4. Complete local Lark Base/Sales Inbox vars.
+5. Put the six required secrets with Wrangler locally; never paste secret values into chat or source. Add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
+6. Deploy dedicated Worker `line-lark-sales-crm` after CI success.
+7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling LINE/Lark callbacks.
+8. Run controlled E2E including Lark-backed image/file/audio proxy behavior and confirm there is no R2 dependency.
+9. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
 
 ## Handoff read order
 
