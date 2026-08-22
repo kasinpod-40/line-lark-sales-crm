@@ -1,6 +1,6 @@
 import type { Env } from "./config/env";
 import type { QueueBatch, WorkerExecutionContext } from "./platform/cloudflare";
-import type { LineEventQueueMessage } from "./queues/line-event.types";
+import type { CrmQueueMessage } from "./queues/line-event.types";
 import { handleLineQueueBatch } from "./queues/line-event.consumer";
 import { handleLineWebhook } from "./routes/line/webhook.route";
 import { handleLarkWebhook } from "./routes/lark/webhook.route";
@@ -22,7 +22,7 @@ const worker = {
     return jsonResponse({ ok: false, message: "Not found" }, 404);
   },
 
-  async queue(batch: QueueBatch<LineEventQueueMessage>, env: Env, _ctx: WorkerExecutionContext): Promise<void> {
+  async queue(batch: QueueBatch<CrmQueueMessage>, env: Env, _ctx: WorkerExecutionContext): Promise<void> {
     await handleLineQueueBatch(batch, env);
   },
 };
