@@ -140,7 +140,7 @@ test('readback desired keeps visible, group and sort field references in canonic
   );
 });
 
-test('mutation desired uses concrete Lark field IDs while preserving canonical contract inputs', async () => {
+test('mutation desired follows documented lark-cli field-name contract and preserves inputs', async () => {
   const { mutationDesiredForViewProperty } = await loadHelpers();
   const ids = {
     customer_id: 'fld_customer',
@@ -154,15 +154,15 @@ test('mutation desired uses concrete Lark field IDs while preserving canonical c
 
   assert.deepEqual(
     mutationDesiredForViewProperty('visible_fields', visible, ids),
-    { visible_fields: ['fld_customer', 'fld_display'] }
+    { visible_fields: ['customer_id', 'display_name'] }
   );
   assert.deepEqual(
     mutationDesiredForViewProperty('group', group, ids),
-    { group_config: [{ field: 'fld_stage', desc: false }] }
+    { group_config: [{ field: 'customer_stage', desc: false }] }
   );
   assert.deepEqual(
     mutationDesiredForViewProperty('sort', sort, ids),
-    { sort_config: [{ field: 'fld_updated', desc: true }] }
+    { sort_config: [{ field: 'updated_at', desc: true }] }
   );
   assert.deepEqual(visible, { visible_fields: ['customer_id', 'display_name'] });
   assert.deepEqual(group, { group_config: [{ field: 'customer_stage', desc: false }] });
