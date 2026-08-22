@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / 0 BUSINESS-DATA MUTATIONS / NEXT STEP IS MANUAL COLUMN-ORDER PASS FOR 15 VIEWS + THREE SIDEBAR TABLE ICONS + VISUAL INSPECTION, THEN OWNER APP/BOT/CLOUDFLARE READINESS AND CONTROLLED E2E.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / 0 BUSINESS-DATA MUTATIONS / NEXT STEP IS FINAL VISUAL CHECK (OPTIONAL TABLE ICON PASS) THEN OWNER APP/BOT/CLOUDFLARE READINESS AND CONTROLLED E2E.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -81,7 +81,7 @@ The server CLI structure/settings lane completed successfully on the existing go
 - 45 verification reads
 - 2 dashboards created
 - 23 dashboard blocks created
-- table icons remain a manual UI pass because the supported table API exposes no sidebar-icon setter
+- table icons remain a UI-only presentation detail because the supported table API exposes no sidebar-icon setter
 
 Lane A no longer calls or final-verifies the unreliable server `visible_fields` mutation endpoint.
 
@@ -101,51 +101,32 @@ The final in-Base JS SDK write/readback pass completed successfully on the same 
 - field-schema mutations: 0
 - record mutations: 0
 
-This is the authoritative runtime evidence that **all 22 curated Views now have the exact requested visible-field membership**. The remaining 15 differences are order-only presentation drift.
+This is the authoritative runtime evidence that **all 22 curated Views have the exact requested visible-field membership**. The remaining 15 differences are order-only presentation drift.
 
-The live evidence also confirms that `showField()` / `hideField()` control visibility membership but do not provide an arbitrary field-order setter. Current official Base JS SDK documentation exposes ordered readback (`getFieldMetaList`, `getVisibleFieldIdList`) plus show/hide controls, but no documented Grid View column-order mutation setter.
+The live evidence confirms that `showField()` / `hideField()` control visibility membership but do not provide an arbitrary field-order setter. Current official Base JS SDK documentation exposes ordered readback (`getFieldMetaList`, `getVisibleFieldIdList`) plus show/hide controls, but no documented Grid View column-order mutation setter.
 
-Therefore correctness is split into two dimensions:
-1. **Visibility membership — COMPLETE / automated / 22 of 22 pass.**
-2. **Column order — 7 exact / 15 manual UI order passes still required.**
+### Column-order acceptance decision — locked
 
-Do not rerun the visibility mutation to chase order-only differences. The final pass already returned `mutation_views=0`, proving the membership reconciler is now idempotent on the live Base.
+The owner explicitly accepted the current column order and does not require manual reordering of the remaining 15 Views.
 
-### Remaining order-only Views
-
-Customers:
-- `🧠 AI Lead Intelligence`
-
-Chat_Tracking:
-- `💬 Case & Chat Timeline`
-- `⚡ SLA Monitor`
-- `🚨 SLA เกิน 5 นาที`
-- `🟢 SLA Fast`
-- `🤝 แยกตาม Sales`
-- `🧭 Case Lifecycle`
-- `📦 Media & Files`
-- `✅ Resolved Cases`
-
-Sales_Deals:
-- `🏆 Closed Won`
-- `📈 Sales Pipeline`
-- `🧾 Quotations`
-- `💳 Payment Control`
-- `👑 Sales Leaderboard`
-- `📅 Closing Timeline`
-
-The exact expected column order remains the machine-readable authority in `deploy/lark-base-ux-contract.json` and was also emitted by the final live runner under `order_mismatches[].expected`.
+Therefore:
+- **Visibility membership — COMPLETE / automated / 22 of 22 pass.**
+- **Column order — 7 exact / 15 order-only drifts ACCEPTED AS NON-BLOCKING.**
+- No manual reorder work is required.
+- Do not rerun the visibility mutation to chase order-only differences.
+- Do not block App/Bot/Cloudflare readiness or controlled E2E on column order.
+- The UX contract keeps the preferred order as a presentation reference only; it is not a runtime/business-correctness gate.
 
 ## Base table naming / icon incident — resolved
 
 One Extension run correctly diagnosed that the visible table names had temporarily become emoji-prefixed names (`👥 Customers`, `💬 Chat_Tracking`, `💰 Sales_Deals`). Those emoji prefixes were part of the actual table names, not separate sidebar icons, and therefore violated the canonical three-table contract.
 
-The table names were restored to the exact canonical contract:
+The canonical contract remains:
 - `Customers`
 - `Chat_Tracking`
 - `Sales_Deals`
 
-Do not prefix canonical table names with emoji. Sidebar table icons remain a separate one-time Lark UI presentation pass.
+Do not prefix canonical table names with emoji. Sidebar table icons are optional presentation-only UI polish and are not a runtime blocker.
 
 ## Live filter readback arity normalization
 
@@ -167,12 +148,12 @@ Reason: a non-zero child process would exit the interactive shell and produce `[
 
 ## Table icons
 
-Locked sidebar assignments:
+Preferred sidebar assignments:
 - `Customers` → 👥
 - `Chat_Tracking` → 💬
 - `Sales_Deals` → 💰
 
-Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. Apply these three in Lark UI after the manual order pass. Do not prefix canonical table names with emoji.
+Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. These icons are optional presentation polish and must not be implemented by prefixing canonical table names with emoji.
 
 ## Latest verification checkpoint
 
@@ -188,7 +169,7 @@ GitHub CI:
 - unit/contract tests: **72/72 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-No source/config/test/migration change was needed for the final successful Lane B runtime pass; the milestone update is documentation-only.
+No source/config/test/migration change was needed for the Lane B runtime pass or this acceptance decision; these are documentation/runtime-state updates only.
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -217,15 +198,14 @@ Phase C customer sale:
 
 ## Next work
 
-1. Stop the local `lark:base:ux:visible-ui` server; the visibility membership lane is complete and should not be rerun to chase order-only drift.
-2. Manually reorder columns for the 15 `ORDER_UI_REQUIRED` Views to match `deploy/lark-base-ux-contract.json` / the final runner `order_mismatches[].expected` lists.
-3. Apply the three locked sidebar table icons in Lark UI: `Customers` → 👥, `Chat_Tracking` → 💬, `Sales_Deals` → 💰, while preserving the exact canonical table names.
-4. Visually inspect all 22 curated Views and both Dashboards.
-5. Configure the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
-6. Read fresh Cloudflare docs before any Cloudflare source/config change, then bind the existing Worker/D1/R2/Queue/DLQ installation-specific vars/secrets.
-7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
-8. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
-9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Stop the local `lark:base:ux:visible-ui` server; the visibility membership lane is complete and should not be rerun.
+2. Do a quick visual inspection of all 22 curated Views and both Dashboards; column-order differences are accepted and non-blocking.
+3. Optionally apply the preferred three sidebar table icons in Lark UI if the UI exposes a true icon control; preserve canonical table names exactly.
+4. Configure the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
+5. Read fresh Cloudflare docs before any Cloudflare source/config change, then bind the existing Worker/D1/R2/Queue/DLQ installation-specific vars/secrets.
+6. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
+7. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
+8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
