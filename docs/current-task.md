@@ -4,22 +4,22 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX CONTRACT COMPLETE / LARK LIST-PARSER + IDEMPOTENCY + EVENTUAL-CONSISTENCY RECOVERY VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE EXISTING BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
 
-There is no DEV/UAT/STAGING/PROD ladder for this product build. Local work and GitHub CI are verification gates only.
+There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
 ## Requirements authority — locked
 
 1. Full customer SRS/SOW existed first.
 2. PM later sent the concise five-function summary and linked back to the SRS.
-3. PM summary is the latest executive acceptance view; the earlier full SRS remains the detailed supporting specification unless explicitly contradicted.
+3. PM summary is the latest executive acceptance view; the full SRS remains the detailed supporting specification unless explicitly contradicted.
 
 PM acceptance view:
-1. New LINE inbound → blue Case Card + AI intent/lead quality → atomic Claim Case → same card turns green with owner.
+1. LINE inbound → blue Case Card + AI intent/lead quality → atomic Claim Case → same card green with owner.
 2. Quote and PromptPay QR sales tools with preview/confirm.
 3. Smart Close → `Sales_Deals` → Active Customer.
-4. Close Case → executive summary including SLA/response and Sales cumulative closed revenue/deal count.
-5. VIP / retarget broadcast commands from Lark Base segmentation.
+4. Close Case → executive summary including SLA/response and Sales closed revenue/deal count.
+5. VIP/retarget broadcast commands from Lark Base segmentation.
 
 Never describe the SRS as a later scope expansion.
 
@@ -44,184 +44,136 @@ Canonical assets:
 - `docs/lark-base-schema.md`
 - `docs/lark-base-provisioning.md`
 - `docs/lark-base-ux.md`
-- D1 migrations in manifest order
-- deployment readiness validator + `/health`
 
-## Personal golden Base — schema milestone complete
+## Personal golden Base — schema complete
 
-The owner created the personal Lark Base shell manually and the deterministic schema provisioner successfully reconciled it to the full `lark_base_golden_contract_v1` contract.
+The owner manually created the Base shell and the deterministic schema provisioner reconciled it successfully without recreating the Base.
 
-Confirmed runtime schema state:
-- `Customers` exists and was reused rather than recreated
+Confirmed:
+- `Customers` reused
 - `Chat_Tracking` created
 - `Sales_Deals` created
 - required fields, links/backlinks and deferred formulas verified
 - final schema apply returned `ok=true`
-- concrete personal Base/table IDs remain installation configuration and are not committed to source
+- concrete personal Base/table IDs remain installation config and are not committed
 
-Two real schema integration mismatches were fixed before this success:
-1. current `lark-cli auth status --json --verify` is a status object rather than an `{ok:true}` shortcut envelope
-2. current Base v3 table/field objects expose identifier `id`; resume accepts both modern `id` and legacy `table_id` / `field_id`
+## Premium UX contract
 
-## Golden Base UX / presentation contract
-
-The supplied customer demo was inspected as a presentation reference. It contains the same three business-table concepts but a much thinner field/view/reporting surface. The golden product must be more complete and presentation-ready without copying the demo's limitations.
-
-Deterministic UX contract:
-- **22 curated views** across the three tables
-- all curated View names are intentional Thai/English business labels with emoji icons
-- platform/default localized View names are reconciled away
-- filters, grouping, sorting and visible-field order are explicitly configured
-- Kanban views cover Customer Journey, Case Lifecycle and Sales Pipeline
-- **2 dashboards / 23 blocks**:
+The supplied customer demo is only a presentation reference. The golden product is intentionally richer:
+- 22 curated Views across the three tables
+- intentional Thai/English business labels with emoji icons
+- default/localized Views reconciled away
+- explicit visible fields, filters, groups and sorts
+- Customer Journey / Case Lifecycle / Sales Pipeline Kanban coverage
+- 2 dashboards / 23 blocks:
   - `🚀 Executive CRM Command Center`
   - `⚡ Sales Ops & SLA Control Room`
-- Executive reporting covers revenue, won deals, average won deal, active/VIP customers, hot leads, revenue by Sales, pipeline, customer stage, lead quality and revenue trend
-- Operations reporting covers open/resolved cases, response/resolution time, case lifecycle, SLA distribution, Sales workload, message type and inbound/outbound activity
 
-Commands:
+UX apply command:
 
 ```bash
-npm run lark:base:ux:plan
 npm run lark:base:ux:apply -- --base-token <existing_base_token>
 ```
 
-The UX apply is resume-safe and refuses to run until the completed exact-three-table schema exists. It never recreates the Base or business tables.
+The UX apply is resume-safe and never recreates the Base or business tables.
 
-### Real UX integration incident 1 — no-op mutation / readback identity mismatch — CLOSED IN CODE
+## Live Lark compatibility incidents — all fixed in code so far
 
-The first real UX apply stopped at `Customers.🧠 AI Lead Intelligence` while setting visible fields because current Lark Base can return `no operation produced` as a non-zero API/CLI result when the requested persisted state is already present.
+### 1. persisted-state no-op
+Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are treated as recoverable and verified through readback instead of fatal errors.
 
-The deeper compatibility issue was that the UX contract intentionally uses stable field **names**, while current Lark view property getters return field **IDs** for `visible_fields`, grouping and sorting. Comparing the two forms directly is not a valid idempotency check.
+### 2. nested Select option misclassified as a Field
+A generic recursive parser incorrectly promoted Select options such as `🔥 Hot Lead` into field resources. Resource parsing now reads only the official top-level list collections (`tables[]`, `fields[]`, `views[]`, dashboard/block `items[]`) and field-ID lookup iterates only schema-contract fields.
 
-Fix verified:
-- read the current view property before each write
-- map contract field names → current target Base field IDs for readback comparison
-- skip writes whose persisted state already matches
-- recognize the official persisted-state `no operation produced` response only on idempotent view-property mutations
-- preserve array order for visible fields and sort/group definitions
-- resume from the partially applied Base; no Base/table recreation and no rollback of successful view work
+### 3. asynchronous read visibility
+Lark Base writes can become visible asynchronously. The runner no longer assumes immediate read-after-write consistency. Final acceptance uses bounded eventual-consistency polling/backoff. View create/rename/delete and Dashboard/Block visibility use the same pattern.
 
-### Real UX integration incident 2 — nested select option misclassified as field — CLOSED IN CODE
+### 4. `visible_fields` readback identity — latest live evidence
+Live target output proved current `+view-get-visible-fields` returns canonical **field names**, e.g.:
 
-A later resume stopped with:
-
-```text
-Field Customers.🔥 Hot Lead exists but current Lark CLI returned no id/field_id
+```json
+{"data":{"visible_fields":["customer_id","display_name","customer_stage","lead_quality"]}}
 ```
 
-`🔥 Hot Lead` is a Single Select option value inside an actual field; it is not a Base field. Root cause was the UX provisioner's generic recursive object crawler: it walked into nested field properties/options and treated every nested object with a `name` as a resource.
+The runner had incorrectly converted the expected `visible_fields` names to `fld...` IDs, causing a false final mismatch even though the actual persisted state already matched the requested configuration.
 
 Fix verified:
-- list parsing now selects only the official resource collection returned by the current CLI (`tables[]`, `fields[]`, `views[]`, or the nearest dashboard/block `items[]` collection)
-- nested Select options and nested metadata are never promoted into field/table/view/dashboard resource maps
-- field-ID lookup iterates only schema-contract field names
-- regression tests cover real-shaped Select options
-- the same collection-aware parser is reused for tables, fields, views, dashboards and dashboard blocks
+- `visible_fields` readback expectation now stays in canonical field-name form
+- group/sort continue using field-ID normalization where current readback requires it
+- regression test uses the exact live-shaped `data.visible_fields` name response
+- array order remains significant
 
-### Real UX integration incident 3 — immediate read-after-write against asynchronous Lark state — CLOSED IN CODE
+These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
 
-The next resume stopped with:
+## Terminal operator-safety rule — locked
 
-```text
-Readback mismatch after setting visible_fields Customers.👥 ลูกค้าทั้งหมด
-```
+**Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell.**
 
-Official current Lark Base guidance states that many Table/View updates are applied asynchronously and an immediate read can still return the previous state. The provisioner was incorrectly treating that temporary stale read as a permanent failure.
+Reason: when a child command returns non-zero, `set -e` exits the interactive shell itself, which causes macOS Terminal to show `[Process completed]` and forces the owner to open a new shell/window.
 
-Fix verified:
-- successful writes are no longer followed by an immediate fatal readback
-- reconciliation reads once before a write to skip already-matching state, then performs the write without assuming instant visibility
-- final acceptance uses bounded eventual-consistency polling with backoff until Lark state converges
-- View create/rename/delete visibility is also polled rather than assumed immediate
-- Dashboard and Dashboard Block creation use the same eventual-consistency wait path proactively, preventing the same failure class later in the run
-- no-op responses remain recoverable, but final persisted state is still verified before the table is accepted
-- final mismatch errors now include bounded diagnostic expected/actual payloads only after retries are exhausted
-- regression tests prove no immediate stale read occurs after write and that stale reads can converge across retries
+Future command blocks must either:
+- omit `set -e` entirely, or
+- use a disposable subshell `( set -euo pipefail; ... )` so only the subshell exits and the interactive Terminal remains usable.
 
-These UX failures were provisioner compatibility defects, not Base corruption and not user setup errors.
+`[Process completed]` is therefore not a Lark/npm error; in our prior blocks it was triggered by the shell being allowed to exit after the failing command.
 
-### Table icons
+## Table icons
 
-Locked sidebar icon assignments:
+Locked sidebar assignments:
 - `Customers` → 👥
 - `Chat_Tracking` → 💬
 - `Sales_Deals` → 💰
 
-Current supported Lark Base v3 table update / official `lark-cli` do not expose a table/sidebar icon setter. Therefore these three icons are a one-time Lark UI pass after automated UX apply. Do not prefix canonical table names with emoji because runtime table names are locked.
+Current supported Lark Base v3 table update / official CLI do not expose a sidebar-icon setter. Apply these three in Lark UI after automated UX apply. Do not prefix canonical table names with emoji.
 
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`66f0765e3f5f82ce2de289abc2fa1a8e4223fed4`
+`8982002aff9bb160860442118bf7a6821e9ab6d5`
 
 GitHub CI:
-- run `32563597101` / run #149
-- job `97008842509`
+- run `32563902361` / run #152
+- job `97009571284`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **60/60 PASS**
-- Wrangler `4.125.0` deploy dry-run bundle: **PASS**
+- unit/contract tests: **61/61 PASS**
+- Wrangler `4.125.0` deploy dry-run: **PASS**
 
-Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may point back to the exact verified code SHA above.
+Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
-## Private prebuild → PM presentation handoff — locked
+## Delivery model — locked
 
 Phase A now:
 - owner's personal Lark workspace/Base
 - owner-controlled Lark App/Bot and `LINE Sales Inbox`
 - owner's existing Cloudflare Worker/D1/R2/Queue/DLQ
 - controlled reference/test LINE OA
-- no real customer production credentials/business data in the private reference Base
+- no real customer production credentials/business data in private reference Base
 
 Phase B when PM formally starts:
-- Cloudflare stays on the same owner infrastructure because PM already uses it
-- change/transfer only the Lark-controlled resources as required
-- keep the same verified application release, schema, migrations and Cloudflare logic
+- Cloudflare remains the same owner infrastructure
+- change/transfer only Lark-controlled resources as required
+- keep the same verified release/schema/migrations/business logic
 - replace only Lark-specific credentials/resource IDs/configuration
-- require `/health` ready and rerun affected E2E before presentation
+- require `/health` ready and rerun affected E2E before PM presentation
 
 This is not a Cloudflare migration and not DEV → PROD promotion.
 
 Phase C customer sale:
 - same verified product blueprint/release/schema/migrations/workflow
-- customer-specific values remain config/secrets/bindings
+- customer-specific values are config/secrets/bindings
 - no per-customer business-logic fork
-
-## Implemented product coverage
-
-- LINE HMAC webhook verification → Queue → Worker
-- D1 idempotency, one active case per LINE user, atomic first-winner claim
-- LINE customer/profile sync
-- AI/rule intent, lead quality and guidance
-- Lark Card 2.0 blue/green/grey lifecycle on the same root card
-- central Sales Inbox + one root Card/Thread per case
-- collaborative human Thread replies with owner attribution preserved
-- root-chat isolation and warning
-- actual responder audit rows
-- text/image/file/PDF/audio/location/sticker-safe bridge mappings
-- R2 expiring media + D1 media metadata
-- Quote → Preview/Confirm → `Sales_Deals` → LINE Flex
-- PromptPay QR Preview/Confirm → LINE
-- Smart Close + direct Closed Won snapshot
-- Payment confirmation → Active Customer + config-driven VIP
-- First Response SLA <=5m rule and separate Resolution metric
-- Sales Closed Won aggregate on resolved Card
-- VIP/retarget broadcast Preview/Confirm → Queue → <=500 multicast batches + retry/fallback
-- strict LINE user-ID filtering
-- deployment validator and safe `/health` readiness gate
 
 ## Next work
 
-1. Pull the branch containing verified code SHA `66f0765e3f5f82ce2de289abc2fa1a8e4223fed4` or a later documentation-only head containing it.
-2. Rerun `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the **same existing personal golden Base**. The run must resume/skip already-persisted state and tolerate asynchronous Lark read visibility.
-3. Verify all 22 curated views and both dashboards materialize without leftover default/localized views.
-4. Apply the three locked Table sidebar icons manually in Lark UI only because the supported API has no icon setter.
-5. Keep Events/Callbacks disabled until the existing Cloudflare stack is configured and `/health` returns HTTP 200 with `configuration.ready=true`.
-6. Configure owner Cloudflare resources/secrets/vars, then enable LINE/Lark callbacks.
-7. Run the full controlled E2E in `docs/setup.md`; fix only real integration mismatches and rerun affected flows.
-8. Do not mark `live-ready` / `reusable-ready` until controlled E2E runtime evidence exists.
+1. Pull current branch head containing verified code SHA `8982002aff9bb160860442118bf7a6821e9ab6d5`.
+2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
+3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
+4. Apply the three locked table icons manually in Lark UI.
+5. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
+6. Configure secrets/vars, enable callbacks, then run controlled E2E.
+7. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
@@ -241,5 +193,3 @@ Phase C customer sale:
 14. `docs/lark-base-schema.md`
 15. `docs/setup.md`
 16. current PR #1 exact HEAD + CI evidence
-
-Never describe this as DEV → UAT → PROD. For PM presentation handoff, Lark changes while Cloudflare remains the owner's existing shared infrastructure unless an explicit later decision changes that.
