@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / UX DELIVERY SPLIT INTO SERVER STRUCTURE+SETTINGS THEN BASE JS SDK VISIBLE-FIELDS / LIVE FILTER READBACK NULL-ARITY NORMALIZATION FIX VERIFIED / NEXT STEP IS RESUME CLI UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / ALL 22 VIEW VISIBILITY MEMBERSHIPS NOW CORRECT / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY UI DRIFTS / BASE JS SDK RUNNER FIX VERIFIED TO STOP RETRYING UNSUPPORTED ORDER MUTATIONS / NEXT STEP IS RESTART THE EXISTING LOCAL EXTENSION SERVER, RE-RUN VISIBLE-FIELD READBACK, THEN DO THE REMAINING MANUAL PRESENTATION ORDER + TABLE ICON PASS.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -68,41 +68,58 @@ The supplied customer demo is only a presentation reference. The golden product 
   - `🚀 Executive CRM Command Center`
   - `⚡ Sales Ops & SLA Control Room`
 
-## Live Lark UX compatibility — resolved delivery order
+## Premium UX Lane A — live complete
 
-The repeated `Customers.🧠 AI Lead Intelligence` failure proved the current server `visible_fields` mutation lane is not reliable on the live golden Base: the endpoint can return without a fatal API error while the persisted View still remains with all fields visible.
+The server CLI structure/settings lane completed successfully on the existing golden Base with no Base recreation:
+- `ok=true`
+- 22 expected Views
+- 6 Views created in the final resume
+- 1 View renamed
+- 0 Views deleted in the final resume
+- View properties: 14 changed / 31 unchanged / 0 no-op recovered
+- 22 visible-field configs intentionally deferred to the in-Base JS SDK lane
+- 45 verification reads
+- 2 dashboards created
+- 23 dashboard blocks created
+- table icons remain a manual UI pass because the supported table API exposes no sidebar-icon setter
 
-A Base JS SDK fallback was then started immediately, but its first live preflight reported:
+Lane A no longer calls or final-verifies the unreliable server `visible_fields` mutation endpoint.
 
-`Missing View: Chat_Tracking.💬 Case & Chat Timeline`
+## Premium UX Lane B — live visibility membership complete; order capability boundary proven
 
-That error exposed an orchestration defect, not another Base defect: the earlier CLI apply had stopped on `Customers.🧠 AI Lead Intelligence` before it ever materialized the remaining `Chat_Tracking` / `Sales_Deals` curated Views. Therefore the in-Base visible-field runner correctly refused to mutate a View that did not yet exist.
+The first full in-Base JS SDK run completed all 22 Views and produced a crucial live distinction:
+- 22 Views inspected
+- **22/22 Views have the exact requested visible-field membership**
+- 7/22 Views also have the exact requested order
+- 15/22 Views differ only in column order
+- 0 unsupported Views
+- 0 table mutations
+- 0 field-schema mutations
+- 0 record mutations
 
-The delivery model is now split by proven capability:
+The earlier runner incorrectly treated order-only drift as a visibility failure. It then hid/re-showed already-correct fields, but the order remained unchanged. The live evidence proves that `showField()` / `hideField()` control visibility membership, not arbitrary column position.
 
-### Lane A — server CLI owns structure and persisted server-safe settings
-`npm run lark:base:ux:apply -- --base-token <existing_base_token>` now:
-- verifies the exact three-table completed schema
-- creates/renames/prunes all 22 curated Views
-- reconciles filters, groups and sorts
-- creates/verifies both dashboards and all 23 blocks
-- **does not call or final-verify server `visible_fields` at all**
-- reports all 22 visible-field configurations as `BASE_JS_SDK_UI_REQUIRED`
+Current official Base JS SDK documentation confirms:
+- `getFieldMetaList()` provides the View field order as readback
+- `getVisibleFieldIdList()` provides visible membership/order readback
+- `showField()` and `hideField()` mutate visibility
+- there is no documented Grid View field-order mutation setter
 
-This allows the CLI pass to finish the full View/Dashboard structure instead of dying before later Views exist.
+Therefore the runner now has two separate correctness dimensions:
+1. **Visibility membership** — automated and required for `ok=true`.
+2. **Column order** — read and reported separately; order-only drift is `MANUAL_UI_PASS_REQUIRED`, not a failed visibility mutation.
 
-### Lane B — in-Base JS SDK owns visible fields/order
-After Lane A succeeds:
+The fixed runner now:
+- performs minimal membership reconciliation only (hide excess + show missing)
+- never re-hides/re-shows a View just because its order differs
+- reports `membership_views`, `ordered_views`, `order_manual_views`, `order_mismatches`
+- returns a membership success when all requested visible fields are present and no extras remain
+- preserves fail-closed behavior for a real membership mismatch or missing/unsupported resource
 
-```bash
-npm run lark:base:ux:visible-ui
-```
+The next live rerun should therefore require `membership_views=22`, `failures=[]`, and should report the remaining order-only Views separately instead of looping.
 
-Open the existing local Extension inside the same Base and click **Apply visible fields**. The runner uses the official Base JS SDK `getVisibleFieldIdList()` + `hideField()` + `showField()` path, keeps the primary field visible, and requires exact ordered readback across all 22 Views.
+## Live filter readback arity normalization
 
-Do not run Lane B before Lane A has completed all 22 View resources.
-
-### Live filter readback arity normalization
 During Lane A, `Chat_Tracking.🟢 SLA Fast` reached a semantically correct persisted filter but final verification rejected it because Lark read back unary `non_empty` as:
 
 `["first_response_seconds", "non_empty", null]`
@@ -111,9 +128,7 @@ while the deterministic contract uses:
 
 `["first_response_seconds", "non_empty"]`
 
-Those forms are semantically identical. The shared View matcher now canonicalizes only the unary `empty` / `non_empty` operators by dropping a trailing `null` before comparison. Binary/ternary operators are not weakened; for example a `<=` condition with a `null` operand does not match a two-item tuple. Regression coverage uses the exact live `🟢 SLA Fast` payload.
-
-This is a verifier compatibility fix only; it does not rewrite the persisted filter or alter business semantics.
+Those forms are semantically identical. The shared View matcher canonicalizes only the unary `empty` / `non_empty` operators by dropping a trailing `null` before comparison. Binary/ternary operators are not weakened.
 
 ## Terminal operator-safety rule — locked
 
@@ -133,18 +148,18 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`6efa60a453b2985ff7aed8e36b0d89efb50c01f4`
+`8e7d8c4b4c4df38c75d91d6b10846d0d48b28163`
 
 GitHub CI:
-- run `32567753219` / run #177
-- job `97018768837`
+- run `32568448190` / run #180
+- job `97020383825`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **70/70 PASS**
+- unit/contract tests: **71/71 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-Regression coverage locks both the split visible-field delivery lane and the exact live unary-filter readback behavior (`empty` / `non_empty` with trailing `null`).
+Regression coverage now locks that the Base JS SDK runner reconciles visibility membership separately from unsupported order-only drift and does not repeatedly mutate already-correct membership.
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -173,11 +188,11 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull branch head containing verified code SHA `6efa60a453b2985ff7aed8e36b0d89efb50c01f4` or a later docs-only commit containing it.
-2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` on the same golden Base and require the server pass to finish all 22 Views + 2 dashboards / 23 blocks with `visible_fields.status=BASE_JS_SDK_UI_REQUIRED`.
-3. Start `npm run lark:base:ux:visible-ui`, reopen/refresh the existing Extension, click **Apply visible fields**, and require all 22 Views exact.
+1. Stop the old local `lark:base:ux:visible-ui` server if it is still running, pull the branch head containing verified code SHA `8e7d8c4b4c4df38c75d91d6b10846d0d48b28163` (or a later docs-only commit containing it), then restart the same server.
+2. Reopen/refresh the existing Base Extension and run **Apply visible fields** once. Require `ok=true`, `membership_views=22`, `failures=[]`; order-only differences must appear only under `order_mismatches` / `order_manual_views`.
+3. Do not rerun visibility mutation to chase order-only differences. Apply the remaining View column order in the Lark UI because the documented SDK exposes no order setter.
 4. Apply the three locked table icons manually in Lark UI.
-5. Visually inspect the 22 curated Views and both Dashboards.
+5. Visually inspect all 22 curated Views and both Dashboards.
 6. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
 7. Configure secrets/vars, enable callbacks, then run controlled E2E.
 8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
