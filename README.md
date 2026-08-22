@@ -1,6 +1,8 @@
 # LINE × Lark Sales CRM
 
-LINE-only Sales CRM for teams that want customers to stay in LINE OA while Sales works entirely inside Lark.
+Reusable LINE-only Sales CRM for teams that want customers to stay in LINE OA while Sales works entirely inside Lark.
+
+Current product release: **0.3.0**
 
 ## Core flow
 
@@ -8,13 +10,17 @@ LINE-only Sales CRM for teams that want customers to stay in LINE OA while Sales
 
 The same root Lark Card is updated through the case lifecycle. The Lark Thread is the conversation. Lark Base is the business CRM store. Cloudflare D1/Queues/R2 hold operational state, idempotency and expiring bridge media.
 
-## Delivery model
+## Product / delivery model
 
-This project uses **one final integration stack only**. There is no DEV/UAT/STAGING/PROD environment ladder.
+We build one complete **golden/reference stack** for the product. There is no DEV/UAT/STAGING/PROD ladder for that implementation.
 
-Local development and GitHub CI are verification gates. After code gates are green, the real Lark Base, LINE OA, Lark App/Bot and Cloudflare resources are provisioned once. The controlled E2E is executed on that same final stack, and the same stack is retained for operation after acceptance.
+After the golden stack passes the controlled E2E, every sold customer receives a fresh installation of the **same verified product release** in customer-specific LINE/Lark/Cloudflare resources. Customer credentials, Base/table IDs, chat IDs, PromptPay target and Cloudflare resource identities are configuration — not source-code forks.
 
-See `docs/single-stack-delivery.md` and `docs/setup.md`.
+See:
+- `docs/single-stack-delivery.md`
+- `docs/customer-deployment-model.md`
+- `deploy/product-manifest.json`
+- `docs/setup.md`
 
 ## Customer-facing Base model
 
@@ -46,16 +52,20 @@ See `docs/lark-base-schema.md` before creating the Base.
 - close-case First Response SLA, separate Resolution timing and Sales Closed Won aggregate card
 - `ยิงโปร vip` / `ยิงโปร retarget` / `บรอดแคสต์` → segment preview → confirmed asynchronous LINE multicast batches <=500 with retry/fallback state
 - retry/idempotency state for webhook events, card actions and campaign batches
+- reusable deployment validation that rejects missing bindings, obvious placeholder IDs, invalid HTTPS public URL, invalid PromptPay target and invalid VIP/VAT/TTL configuration before E2E
+- `/health` returns HTTP 200 only when required runtime configuration is ready; otherwise HTTP 503 with safe issue codes/messages and no secret values
 
-## Local checks
+## Local / CI checks
 
 ```bash
 npm install
 npm run check
 ```
 
-Local checks are not a DEV/UAT environment and do not replace the final controlled E2E.
+Local checks and GitHub CI are verification gates, not runtime environments. They do not replace the final controlled E2E.
 
-## Final-stack prerequisites
+## Golden/customer installation prerequisites
 
-Do not enable real webhook/event traffic until the three Base tables, D1, R2, Queue/DLQ, LINE credentials, Lark app/event subscriptions, PromptPay target and public Worker URL are configured. See `docs/setup.md`.
+Do not enable real webhook/event traffic until the three Base tables, D1, R2, Queue/DLQ, LINE credentials, Lark app/event subscriptions, PromptPay target and public Worker URL are configured.
+
+Use `deploy/product-manifest.json` as the machine-readable release/install contract and `docs/setup.md` as the controlled E2E checklist.
