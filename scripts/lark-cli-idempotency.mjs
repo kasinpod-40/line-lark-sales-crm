@@ -42,3 +42,34 @@ export function viewPropertyMatches(payload, expected) {
   }
   return false;
 }
+
+function resolveFieldId(fieldIdsByName, fieldName) {
+  const id = fieldIdsByName?.[fieldName];
+  if (typeof id !== "string" || !id.trim()) throw new Error(`Missing Lark field id for ${fieldName}`);
+  return id.trim();
+}
+
+export function readbackDesiredForViewProperty(property, desired, fieldIdsByName) {
+  if (property === "visible_fields") {
+    return {
+      visible_fields: (desired.visible_fields || []).map((fieldName) => resolveFieldId(fieldIdsByName, fieldName)),
+    };
+  }
+  if (property === "group") {
+    return {
+      group_config: (desired.group_config || []).map((item) => ({
+        ...item,
+        field: resolveFieldId(fieldIdsByName, item.field),
+      })),
+    };
+  }
+  if (property === "sort") {
+    return {
+      sort_config: (desired.sort_config || []).map((item) => ({
+        ...item,
+        field: resolveFieldId(fieldIdsByName, item.field),
+      })),
+    };
+  }
+  return desired;
+}
