@@ -16,8 +16,19 @@ test('visible-field fallback is a local Base JS SDK runner pinned to the reposit
   assert.match(browser, /showField/);
 });
 
-test('visible-field fallback mutates presentation only and verifies exact ordered readback', () => {
-  assert.match(browser, /sameArray\(afterIds, desiredIds\)/);
+test('visible-field fallback reconciles membership without retrying unsupported order-only drift', () => {
+  assert.match(browser, /execute && !sameMembership\(beforeIds, desiredIds\)/);
+  assert.match(browser, /const hideIds = beforeIds\.filter\(\(id\) => id !== primaryId && !desiredSet\.has\(id\)\)/);
+  assert.match(browser, /const showIds = desiredIds\.filter\(\(id\) => id !== primaryId && !beforeSet\.has\(id\)\)/);
+  assert.match(browser, /const membershipExact = sameMembership\(afterIds, desiredIds\)/);
+  assert.match(browser, /const orderExact = membershipExact && sameArray\(afterIds, desiredIds\)/);
+  assert.match(browser, /VISIBLE_FIELDS_MEMBERSHIP_PASS_ORDER_UI_REQUIRED/);
+  assert.match(browser, /order_manual_views/);
+  assert.match(browser, /MANUAL_UI_PASS_REQUIRED/);
+  assert.doesNotMatch(browser, /hide every other currently-visible field/);
+});
+
+test('visible-field fallback reports presentation-only mutations and no business-data mutation', () => {
   assert.match(browser, /table_mutation_count: 0/);
   assert.match(browser, /field_schema_mutation_count: 0/);
   assert.match(browser, /record_mutation_count: 0/);
