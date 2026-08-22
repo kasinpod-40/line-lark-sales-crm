@@ -16,11 +16,17 @@
     "COMPANY_NAME": "Your Company",
     "QUOTE_DEFAULT_VAT_RATE": "7",
     "QR_TTL_SECONDS": "604800",
+    "MEDIA_TTL_SECONDS": "604800",
+    "VIP_GOLD_MIN_THB": "",
+    "VIP_DIAMOND_MIN_THB": "",
     "AI_TEXT_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
     "AI_VISION_MODEL": "@cf/meta/llama-3.2-11b-vision-instruct"
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "line-lark-sales-crm", "database_id": "REPLACE_D1_ID" }
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA_BUCKET", "bucket_name": "line-lark-sales-crm-media" }
   ],
   "queues": {
     "producers": [
