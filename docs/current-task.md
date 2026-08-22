@@ -4,11 +4,16 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / EXACT CODE HEAD CI VERIFIED / WAITING FOR THE SINGLE FINAL-STACK CONTROLLED E2E.**
+**PRODUCT CODE-COMPLETE FOR THE CURRENT PM + SRS SCOPE / REUSABLE RELEASE CONTRACT ADDED / EXACT CODE HEAD CI VERIFIED / WAITING ONLY FOR THE SINGLE FINAL-STACK CONTROLLED E2E.**
 
-There is **no DEV, UAT, STAGING, or PROD environment ladder** for our implementation. Local work and GitHub CI are code-verification gates only. We will provision our real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it as the product's golden/reference stack. See `docs/single-stack-delivery.md`.
+There is **no DEV, UAT, STAGING, or PROD environment ladder** for our golden implementation. Local work and GitHub CI are verification gates only. We will provision our real LINE/Lark/Cloudflare target once, run the controlled E2E on that same stack, and retain it as the product's golden/reference stack.
 
-The commercial model is also locked: once our golden stack is complete, a sold customer receives a fresh installation of the **same verified product** in customer-specific LINE/Lark/Cloudflare resources. We change configuration/secrets/resource IDs, not the business logic. See `docs/customer-deployment-model.md`.
+The commercial model is locked: every sold customer receives a fresh installation of the **same verified product release** in customer-specific LINE/Lark/Cloudflare resources. We change configuration/secrets/resource IDs, not business logic. Per-customer forks are not the default architecture.
+
+Read:
+- `docs/single-stack-delivery.md`
+- `docs/customer-deployment-model.md`
+- `deploy/product-manifest.json`
 
 ## Requirements authority
 
@@ -27,21 +32,22 @@ The detailed SRS remains the supporting specification for collaboration, Thread 
 
 ## Exact verified code checkpoint
 
+Product release: `0.3.0`
+
 Last code-bearing verified SHA:
-`ff7a4a67a9637b1478693621156c82283a6eb417`
+`15900c2e371b15a9daf05b85a1340214f01be915`
 
 GitHub CI:
-- run `32547224715` / run #85
-- job `96967752702`
+- run `32549836467` / run #102
+- job `96974655016`
 - result: **SUCCESS**
 - `npm install --ignore-scripts`: SUCCESS
-- `npm run check`: SUCCESS
+- dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: SUCCESS
-- unit/contract tests: SUCCESS
+- unit/contract tests: **36/36 PASS**
 - Wrangler deploy dry-run bundle: SUCCESS
-- dependency audit during install: 0 vulnerabilities
 
-Commits after this checkpoint may be documentation-only. If any source/config/test/migration code changes after the verified SHA, exact-HEAD CI must pass again before external setup.
+Documentation-only commits may follow this checkpoint. If any source/config/test/migration code changes after this SHA, exact code HEAD CI must pass again before external setup.
 
 ## Implemented code coverage
 
@@ -66,6 +72,18 @@ Commits after this checkpoint may be documentation-only. If any source/config/te
 - VIP/retarget/broadcast command flow with Preview/Confirm, strict LINE user-ID filtering, Queue dispatch, <=500 multicast batches, retry-key state and safe individual fallback
 - callback work detached from the immediate Lark response using Worker `waitUntil()` where applicable
 
+## Reusable deployment hardening completed
+
+- product version aligned to `0.3.0`
+- machine-readable `deploy/product-manifest.json` added
+- manifest locks the three-table contract, D1 migration order, required bindings, secrets/vars and callback paths
+- runtime deployment validator added
+- `/health` returns HTTP `200` only when blocking installation configuration is ready
+- incomplete/malformed installation returns HTTP `503` with safe issue codes/messages and no secret values
+- validator rejects missing required config/bindings, obvious placeholder IDs, invalid HTTPS public URL, PromptPay target/type mismatch, invalid VAT/TTL and invalid VIP threshold ordering
+- Workers AI and VIP thresholds remain optional warnings because the product has deterministic/safe fallback behavior
+- tests lock manifest contents and credential-free contract
+
 ## Architecture lock
 
 Customers remain in LINE OA. Sales/Support/Manager operate from Lark.
@@ -84,13 +102,14 @@ Cloudflare-native reliability is authoritative where it provides the required SR
 Our own completed installation is the canonical **golden/reference stack**, not a disposable DEV environment.
 
 For each sold customer:
-- use the same verified application release/SHA
+- use the same verified release/SHA + matching `deploy/product-manifest.json`
 - create the same 3-table Base contract
-- apply the same D1 migrations
+- apply the same D1 migrations in manifest order
 - use the same Card/Thread/Quote/QR/Deal/SLA/Broadcast logic
 - provide customer-specific LINE/Lark/PromptPay/Cloudflare configuration through secrets, vars and bindings
 - never hard-code customer credentials, Base/table IDs, chat IDs or resource IDs in source
 - avoid per-customer code forks; reusable variations should be configuration/features in the main product where feasible
+- require `/health` ready before enabling callbacks
 - run the same controlled E2E on the customer's final installation before handoff
 
 Our golden stack must not contain real customer credentials/data merely to serve as a deployment template.
@@ -108,16 +127,17 @@ All field/API contracts use lower `snake_case`.
 
 Use `docs/lark-base-schema.md` as the final Base creation contract.
 
-## Single final-stack next step
+## Only remaining work — external runtime
 
-Do **not** create DEV/UAT copies for our golden implementation.
+No intentional code feature backlog remains for the accepted PM + SRS scope.
 
-1. Ensure the latest branch contains no unverified code changes after the verified checkpoint.
-2. Create our real final Lark Base once from `docs/lark-base-schema.md`.
-3. Provision our final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
-4. Apply D1 migrations once and in order.
-5. Configure final LINE/Lark credentials, table IDs, PromptPay target, R2/Queue bindings and public Worker URL.
-6. Keep LINE/Lark event traffic disabled/disconnected until configuration is complete; enable callbacks/webhook only when ready for the controlled E2E.
+Next:
+1. Create our real final Lark Base once from `docs/lark-base-schema.md`.
+2. Provision our final Worker, D1, R2, Queue/DLQ, Lark App/Bot and Sales Inbox once.
+3. Apply D1 migrations exactly in `deploy/product-manifest.json` order.
+4. Configure final LINE/Lark credentials, table IDs, PromptPay target, bindings and public Worker URL.
+5. Require `/health` HTTP 200 with `configuration.ready=true`.
+6. Enable Lark callbacks and LINE webhook only after readiness is green.
 7. Execute `docs/setup.md` controlled E2E directly on this final golden stack.
 8. If any mismatch appears, fix only the root cause, pass CI, then rerun the affected flow on the same stack.
 9. When all acceptance steps pass, mark the same stack `live-ready` and `reusable-ready`; there is no environment promotion or data migration afterward.
@@ -129,11 +149,12 @@ Do **not** create DEV/UAT copies for our golden implementation.
 3. `docs/requirements-authority.md`
 4. `docs/single-stack-delivery.md`
 5. `docs/customer-deployment-model.md`
-6. `docs/customer-srs-sow-2026-08-22.md`
-7. `docs/customer-srs-gap-analysis.md`
-8. `docs/schema-naming-convention.md`
-9. `docs/lark-base-schema.md`
-10. `docs/setup.md`
-11. current PR #1 exact HEAD + CI evidence
+6. `deploy/product-manifest.json`
+7. `docs/customer-srs-sow-2026-08-22.md`
+8. `docs/customer-srs-gap-analysis.md`
+9. `docs/schema-naming-convention.md`
+10. `docs/lark-base-schema.md`
+11. `docs/setup.md`
+12. current PR #1 exact HEAD + CI evidence
 
 Never describe the SRS as a later scope expansion. Never describe our delivery as DEV → UAT → PROD. Never treat a customer installation as a reason to fork the core business logic.
