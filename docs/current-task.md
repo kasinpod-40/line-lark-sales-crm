@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / VIEW PROPERTY RESOURCE IDS + DOCUMENTED FIELD-NAME PAYLOAD CONTRACT VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / SERVER `visible_fields` PATH DECLARED UNRELIABLE ON THE LIVE GOLDEN BASE / BASE JS SDK VISIBLE-FIELD RUNNER VERIFIED IN CI / NEXT STEP IS APPLY THAT UI RUNNER, THEN RESUME UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -38,12 +38,11 @@ Canonical assets:
 - `scripts/provision-lark-base.mjs`
 - `deploy/lark-base-ux-contract.json`
 - `scripts/provision-lark-base-ux.mjs`
+- `scripts/lark-base-visible-fields-ui-server.mjs`
+- `scripts/lark-base-visible-fields-ui.browser.js`
 - `scripts/lark-cli-idempotency.mjs`
 - `scripts/lark-cli-resource-list.mjs`
 - `scripts/lark-eventual-reconcile.mjs`
-- `docs/lark-base-schema.md`
-- `docs/lark-base-provisioning.md`
-- `docs/lark-base-ux.md`
 
 ## Personal golden Base — schema complete
 
@@ -69,67 +68,54 @@ The supplied customer demo is only a presentation reference. The golden product 
   - `🚀 Executive CRM Command Center`
   - `⚡ Sales Ops & SLA Control Room`
 
-UX apply command:
+CLI UX apply remains resume-safe and never recreates the Base or business tables:
 
 ```bash
 npm run lark:base:ux:apply -- --base-token <existing_base_token>
 ```
 
-The UX apply is resume-safe and never recreates the Base or business tables.
+## Live Lark UX compatibility — current conclusion
 
-## Live Lark compatibility incidents — fixed in code so far
+The repeated `Customers.🧠 AI Lead Intelligence` failure is no longer treated as a parser/readback problem.
 
-### 1. persisted-state no-op
-Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are recoverable and still require final readback convergence.
+Live evidence now proves:
+- the requested subset is stable and valid
+- the concrete Table/View addressing and readback are correct
+- `+view-set-visible-fields` can return without a fatal API error while the persisted View still remains with all fields visible
+- repeated retries across name/ID payload variants did not persist that View subset
+- official current CLI E2E coverage explicitly lacks deterministic live View workflows
 
-### 2. nested Select option misclassified as a Field
-A generic recursive parser incorrectly promoted Select options such as `🔥 Hot Lead` into field resources. Resource parsing now reads only the official list collections and field lookup iterates only schema-contract fields.
+Therefore **do not keep rerunning the same server visible-field mutation path** on the golden Base.
 
-### 3. asynchronous read visibility
-Lark Base writes can become visible asynchronously. The runner no longer assumes immediate read-after-write consistency. Final acceptance uses bounded eventual-consistency polling/backoff, including View and Dashboard resource visibility.
+The recovery lane now reuses the already-proven architecture family from the Social MKT Base workstream: run inside Lark Base with the official Base JS SDK. Current official Grid View documentation exposes:
+- `getVisibleFieldIdList()`
+- `hideField(fieldId | fieldId[])`
+- `showField(fieldId | fieldId[])`
 
-### 4. `visible_fields` readback identity
-Live target output proved `+view-get-visible-fields` returns canonical field **names**, not `fld...` IDs. The runner keeps the expected visible-field state in canonical name form.
+The new runner:
+- reads the same `deploy/lark-base-ux-contract.json`
+- never stores concrete Base/Table/View IDs in source
+- mutates View presentation only
+- does not mutate Tables, Field schema or Records
+- keeps the primary field visible
+- hides current non-primary fields and shows desired fields one-by-one in contract order
+- reads back the ordered visible field IDs and requires exact equality
+- fails closed on missing/duplicate Tables, Fields or Views
 
-### 5. `group` readback identity
-Live target output also proved `+view-get-group` resolves persisted field references to canonical field **names**. Readback verification keeps names for `visible_fields`, `group`, and `sort`, while tolerating wrapper differences and alternate ID-shaped responses.
+Run it locally with:
 
-### 6. field-name mutation contract — corrected after live failure
-The repeated `🧠 AI Lead Intelligence` mismatch showed that converting the desired fields to `fld...` IDs before mutation did not persist the requested subset on the golden Base.
+```bash
+npm install --ignore-scripts
+npm run lark:base:ux:visible-ui
+```
 
-The earlier ID-write assumption came from official CLI **unit/mocked tests**, not a live View workflow. Official CLI E2E coverage explicitly says View operations currently lack deterministic live workflow coverage. More importantly, the public current shortcut help itself documents **field names** for all three writes:
-- `+view-set-visible-fields`: `{"visible_fields":["Name","Status"]}`
-- `+view-set-group`: `{"group_config":[{"field":"Status","desc":false}]}`
-- `+view-set-sort`: `{"sort_config":[{"field":"Priority","desc":true}]}`
-
-Fix verified:
-- mutation payloads for `visible_fields`, `group`, and `sort` now stay in canonical field-name form exactly as the current public CLI contract documents
-- readback expectations use the same canonical field names
-- alternate `fld...` ID-shaped readback remains canonicalized back to names by the matcher
-- field-ID lookup remains available for schema/resource validation, but is no longer used to rewrite View property payloads
-- regression test locks the documented name-based mutation contract and input immutability
-
-### 7. concrete resource addressing remains required
-Table and View path coordinates are separate from the field-reference representation inside the payload.
-
-Fix remains locked:
-- schema preflight resolves and requires concrete `tbl...` IDs for all three business tables
-- View list/create/rename/delete/property read/property write use concrete current `vew...` IDs
-- newly-created View metadata retains the returned concrete ID
-- final verification refreshes the live View list and resolves every curated View name back to its current ID before reading properties
-- dashboard/block existence checks require concrete IDs before continuing
-
-These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
+Then open the printed local URL from **Lark Base → Add script** and click **Apply visible fields**. Only after that runner returns `ok=true` should the normal CLI UX apply resume for the remaining filters/groups/sorts/dashboards.
 
 ## Terminal operator-safety rule — locked
 
 **Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell.**
 
-Reason: when a child command returns non-zero, `set -e` exits the interactive shell itself, which causes macOS Terminal to show `[Process completed]` and forces the owner to open a new shell/window.
-
-Future command blocks must either:
-- omit `set -e` entirely, or
-- use a disposable subshell `( set -euo pipefail; ... )` so only the subshell exits and the interactive Terminal remains usable.
+Reason: a non-zero child process would exit the interactive shell and produce `[Process completed]`.
 
 ## Table icons
 
@@ -143,15 +129,15 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`ea81d3114d57d3a132b2ed2e5b6a24203f60a457`
+`6fba85e7adce16e733aaaf12cb784a6a133ebdc6`
 
 GitHub CI:
-- run `32566182262` / run #165
-- job `97015025590`
+- run `32566707903` / run #170
+- job `97016268670`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **65/65 PASS**
+- unit/contract tests: **67/67 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
@@ -181,13 +167,14 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull current branch head containing verified code SHA `ea81d3114d57d3a132b2ed2e5b6a24203f60a457` or a later docs-only commit containing it.
-2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
-3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
-4. Apply the three locked table icons manually in Lark UI.
-5. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
-6. Configure secrets/vars, enable callbacks, then run controlled E2E.
-7. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Pull branch head containing verified code SHA `6fba85e7adce16e733aaaf12cb784a6a133ebdc6` or a later docs-only commit containing it.
+2. Run the Base JS SDK visible-field UI runner on the same personal golden Base and require `ok=true`.
+3. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>`.
+4. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
+5. Apply the three locked table icons manually in Lark UI.
+6. Keep Events/Callbacks disabled until Cloudflare configuration is complete and `/health` returns HTTP 200 with `configuration.ready=true`.
+7. Configure secrets/vars, enable callbacks, then run controlled E2E.
+8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
