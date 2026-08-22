@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE IN CODE / R2 NO LONGER REQUIRED / EXACT CODE HEAD CI SUCCESS 74/74 / WORKER NOT YET DEPLOYED / CALLBACKS REMAIN DISABLED / NEXT STEP IS LOCAL WRANGLER + LARK APP/BOT/SALES INBOX CONFIG, THEN FIRST DEPLOY AND `/health`.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE / R2 NOT REQUIRED / WORKER FIRST DEPLOY COMPLETE / `/health` HTTP 200 + `configuration.ready=true` / LINE WEBHOOK CUT OVER AND VERIFIED / LARK EVENT CALLBACK URL-VERIFICATION CHALLENGE PATCH CI-PASSED AND AWAITS LIVE WORKER DEPLOY / CONTROLLED E2E NOT YET COMPLETE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -60,12 +60,12 @@ Owner accepted the 15 order-only differences as non-blocking. No manual reorder 
 
 All Cloudflare resources for this product must be dedicated to this project. Never bind BNK, legacy CRM or Social MKT resources.
 
-Dedicated runtime resources now required:
+Dedicated runtime resources:
 - Worker: `line-lark-sales-crm`
 - D1: `line-lark-sales-crm`
 - Queue: `line-lark-sales-crm-events`
 - DLQ: `line-lark-sales-crm-events-dlq`
-- Workers AI binding: optional
+- Workers AI binding: enabled on current golden deployment
 
 **R2 is not required by the current product architecture.** Do not create or bind an R2 bucket merely because an earlier draft used one.
 
@@ -75,12 +75,13 @@ Verified live state:
 - dedicated D1 created successfully in APAC
 - dedicated Queue created successfully
 - dedicated DLQ created successfully
-- D1 migrations are fully applied
-- Queue/DLQ have no producer/consumer yet because Worker has not been deployed
-- Worker does not yet exist
-- account-level R2 returns code `10042`, but this is no longer a deployment blocker because R2 has been removed from the required architecture
-
-The local install-specific `wrangler.jsonc` is Git-ignored. It must retain only this project's D1 + Queue/DLQ + optional AI bindings; any local R2 stanza from an earlier draft should be removed.
+- D1 migrations fully applied
+- Worker first deployment completed at `https://line-lark-sales-crm.kasinpod40.workers.dev`
+- `/health` returned HTTP 200, `ok=true`, `configuration.ready=true`
+- readiness true for LINE, Lark, Lark Base, PromptPay placeholder, operational state, media and Workers AI
+- VIP thresholds intentionally unset; current warning is non-blocking
+- PromptPay target remains demo/placeholder and must not be used for real payment acceptance
+- no R2 binding is present or required
 
 ### D1 migration milestone — complete
 
@@ -116,32 +117,38 @@ Media behavior:
 - `MEDIA_TTL_SECONDS` remains as the expiring proxy-token lifetime; it no longer describes R2 object retention.
 - D1 remains the authority for atomic claim, webhook/action dedupe, route state, drafts, QR metadata, campaign state and expiring media-proxy metadata.
 
-## Exact code verification — complete
+## LINE callback — live
 
-Latest code/config/test-bearing verified SHA:
-`fc9d33e81281640d232f893bbf5927c84ab247e7`
+The golden/reference LINE OA webhook has been changed from the legacy `omnichannel-commerce-crm` endpoint to:
+
+`https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/line`
+
+LINE Developers verification returned **Success**. `Use webhook` and `Webhook redelivery` are enabled.
+
+This is a cutover: the LINE Messaging API channel has one webhook destination, so the old Worker no longer receives this OA's webhook events directly.
+
+## Lark callback URL-verification incident — patch ready
+
+When switching Lark Event Configuration from persistent connection to `Send notifications to developer's server`, Lark returned:
+
+`Challenge code didn't get response`
+
+Root cause in reusable code: the URL-verification challenge was placed behind runtime verification-token comparison. Lark requires the received `challenge` value to be echoed immediately during request-URL ownership verification.
+
+Minimal reusable patch:
+- `src/routes/lark/webhook.route.ts` now returns `{ challenge }` immediately for URL-verification requests
+- normal Lark event and Card Action callbacks still require `LARK_VERIFICATION_TOKEN`
+- no Base/D1/Queue/schema/media architecture changed
+- added `test/lark-webhook.test.cjs` covering immediate challenge echo and retained token enforcement for non-challenge callbacks
+
+Exact verified code/test HEAD:
+`4c256e591f9f42b0cb69d6db41d96c388d4788a0`
 
 GitHub CI:
-- run `32583000911` / run #192
-- job `97055062250`
+- run `32585641038` / run #195
 - result: **SUCCESS**
-- dependencies: 121 packages added / 122 audited / **0 vulnerabilities**
-- TypeScript strict typecheck: **PASS**
-- unit/contract tests: **74/74 PASS**
-- Wrangler `4.125.0` deploy dry-run: **PASS**
-- dry-run upload: 6144.07 KiB / gzip 536.71 KiB
 
-Verified source changes:
-- `Env` no longer requires `MEDIA_BUCKET`
-- readiness no longer blocks on R2
-- `MediaAssetService` stores Lark resource locators in D1 instead of media bytes in R2
-- public media route proxies authorized Lark resources
-- LINE → Lark no longer uses R2 fallback
-- Lark → LINE uses the Lark-backed proxy URL
-- canonical manifest and Wrangler example contain no R2 binding
-- tests cover no-R2 readiness and Lark media-locator encoding
-
-No Worker deployment or external callback mutation was performed by this code change.
+The currently live Worker must be updated to this exact code-bearing HEAD before retrying Lark Request URL verification.
 
 ## Terminal operator-safety rule — locked
 
@@ -161,14 +168,14 @@ PM/customer installations use the same verified release and resource pattern. Cu
 
 ## Next work
 
-1. Update local untracked `wrangler.jsonc` to match `wrangler.jsonc.example`: remove any R2 binding and retain dedicated D1 + Queue/DLQ + optional AI.
-2. Configure/verify owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep callbacks disabled.
-3. Complete local Lark Base/Sales Inbox vars.
-4. Put the six required secrets with Wrangler locally; never paste secret values into chat or source. Add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
-5. Deploy dedicated Worker `line-lark-sales-crm` for the first time.
-6. Require `/health` HTTP 200 with `configuration.ready=true` before enabling LINE/Lark callbacks.
-7. Run controlled E2E including Lark-backed image/file/audio proxy behavior and confirm there is no R2 dependency.
-8. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
+1. Sync Mac to exact code/test HEAD `4c256e591f9f42b0cb69d6db41d96c388d4788a0` (documentation-only handoff commits may follow it).
+2. Deploy the existing golden Worker with the already-configured local `wrangler.jsonc` and existing Cloudflare secrets; do not recreate D1/Queue/DLQ and do not re-run migrations.
+3. Recheck `/health` remains HTTP 200 with `configuration.ready=true`.
+4. Retry Lark Event Configuration Request URL `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark`; URL-verification challenge must pass.
+5. Add `im.message.receive_v1` and configure Card callback/action URL on the same Worker route as required.
+6. Run controlled E2E beginning with LINE text → one blue Case Card + Thread in `LINE Sales Inbox`.
+7. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
+8. Replace demo PromptPay configuration before any real payment/QR use.
 
 ## Handoff read order
 
