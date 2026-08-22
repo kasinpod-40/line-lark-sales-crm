@@ -1,231 +1,167 @@
 # Customer SRS Gap Analysis
 
-Source: `docs/customer-srs-sow-2026-08-22.md`
-
 Status date: 2026-08-22 (ICT)
 
-## Executive status
+Sources:
+- `docs/customer-srs-sow-2026-08-22.md` — full detailed SRS/SOW, created first.
+- PM 5-function summary — sent later and explicitly linked back to the full SRS.
+- `docs/requirements-authority.md` — locked interpretation of precedence.
 
-The repository was integration-ready for the previously agreed LINE-only Sales CRM scope, but the customer SRS introduces additional requirements and several architecture/schema differences. Therefore the correct status against the **full customer SRS** is now:
+## Executive interpretation
 
-**PARTIALLY IMPLEMENTED — additional code and schema alignment required before Lark Base creation/E2E.**
+The full SRS was **not** introduced after the 5-function scope. The chronology is the opposite: SRS first, PM summary later.
 
-Do not treat the previous integration-ready checkpoint as full SRS completion.
+Therefore:
+- The PM 5-function message is the latest executive/acceptance-priority summary.
+- The SRS remains the detailed specification behind it because the PM explicitly links to it.
+- The current code already covers most of the five PM-level business functions.
+- Remaining items below are **detailed SRS coverage gaps**, not newly introduced later scope.
 
-## Requirements that already align well
+## PM 5-function coverage
 
-### Module 1 — inbound / identity
-- LINE webhook signature verification: implemented.
-- Fast webhook acceptance through Queue: implemented.
-- LINE profile/name resolution: implemented.
-- D1-based one-active-case uniqueness / race protection: implemented and stronger than an in-memory Promise lock for distributed Workers.
-- Customer + case/message tracking repositories: implemented, but field names/schema need alignment with customer SRS.
+### 1. Customer Card + AI + Claim
+Implemented at core level:
+- signed LINE webhook + Queue
+- customer/profile resolution
+- AI intent/lead signals
+- blue new-case Card
+- atomic Claim Case
+- live owned/green Card state
 
-### Module 2 — AI Sales Copilot
-- Text intent classification: implemented with Workers AI + deterministic fallback.
-- Image analysis/payment-slip signal: implemented.
-- Lead score/hot-lead/business stage: implemented.
-- AI summary shown on Case Card: implemented.
-- Customer SRS adds explicit Technical Support / Demo intent labeling and actionable guidance wording; this needs alignment.
+Detailed SRS gaps under this area:
+- align Technical Support / Demo labels and actionable guidance wording where required
+- finalize collaboration/security behavior described in SRS module 4
 
-### Module 3 — Lark Card
-- Blue new-case / green assigned / grey resolved Card lifecycle: implemented.
-- Same root Card patch/update architecture: implemented.
-- Claim / Quote / QR / Close Deal / Retarget / Close Case actions: implemented.
-- `wide_screen_mode: true` and `update_multi: true` on the root Case Card: implemented.
-- `card.action.trigger` returns immediately and uses Worker `waitUntil()` for background mutation/outbound: implemented.
-- Manual Quote entry is required because there is no Product table; the button starts the flow with one click, then Sales fills Preview/Confirm form.
+### 2. Quote + PromptPay QR
+Implemented at core level:
+- manual Lark quote form because no Product table exists
+- Preview/Confirm
+- quotation snapshot persisted in `Sales_Deals` before LINE outbound
+- LINE Flex quotation
+- QR amount loaded from persisted deal/quote
+- PromptPay payload + high-resolution PNG
+- Preview/Confirm before send
 
-### Module 5 — Deal / QR
-- `ปิดยอด <amount>` parser + confirmation: implemented.
-- Closed Won + customer Active Customer + lifetime-value recalculation: implemented.
-- PromptPay payload/QR generation: implemented.
-- Payment Confirmation message avoids pretending to be a legal tax invoice: implemented.
-- Customer SRS adds more close parser forms (`ยอดเงิน 150000`, bare `30000`) and automatic VIP adjustment; not yet implemented.
+Interpretation of “1-click”:
+- one click enters the sales action workflow
+- the system cannot know product/price automatically without a product/catalog source
 
-### Module 6 — analytics
-- First Response timing: implemented.
-- Resolution timing: implemented.
-- Sales Closed Won aggregate amount/count: implemented.
-- Final same-Card mutation: implemented.
-- SRS requires explicit <=5 minute SLA label; current Card shows elapsed seconds but does not yet present the exact Fast/Overdue label.
+### 3. Smart Deal Closing
+Implemented at core level:
+- `ปิดยอด <amount>` command
+- confirmation before mutation
+- Closed Won / Paid state
+- Active Customer update
+- payment confirmation to LINE
+- direct-close snapshot if no quote exists
 
-### Module 7 — broadcast
-- VIP/retarget command handling: implemented.
-- Preview/Confirm before send: implemented.
-- LINE multicast batching max 500 + stable retry key/D1 state: implemented.
-- SRS adds `บรอดแคสต์` alias, strict LINE User ID regex and per-recipient fallback-loop semantics; not fully implemented.
+Detailed SRS gaps:
+- additional safe command variants such as `ยอดเงิน 150000`
+- bare numeric command only with unambiguous case context + confirmation
+- configurable VIP auto-upgrade thresholds; never invent Gold/Diamond thresholds
 
-## Material gaps / conflicts requiring code changes
+### 4. Executive Post-Case Analytics
+Implemented at core level:
+- First Response timing
+- Resolution timing
+- Sales Closed Won aggregate amount/count
+- same root Card becomes resolved report
 
-### GAP-A — Team collaboration vs current owner-only security
+Detailed SRS gap:
+- exact SLA label rule such as <=5 minutes = Fast and overdue representation
 
-Customer SRS 4.1 says **Sales, Specialist and Manager may all reply from the case Thread and those replies should reach the LINE customer**.
+### 5. CRM Multicast
+Implemented at core level:
+- VIP/retarget commands/actions
+- Preview/Confirm
+- segment recipient snapshot
+- multicast batches max 500
+- deterministic retry keys + D1 batch state
 
-Current implementation intentionally blocks every non-owner reply and every non-owner action.
+Detailed SRS gaps:
+- additional command alias if required (`บรอดแคสต์`)
+- strict LINE user ID validation
+- safe multicast failure fallback/recovery observability
+- do not represent retries as a guarantee of 100% end-user delivery
 
-Required redesign:
-- Keep one **case owner** for KPI/Sales attribution.
-- Allow authorized Lark team members in the same Sales Inbox Thread to send customer-facing replies.
-- Keep financial/ownership actions permission-controlled (owner and/or configured roles).
-- Track actual responder identity per outbound message separately from case owner.
+## Detailed SRS gaps still requiring engineering work
 
-This is the largest behavioral conflict with the previous product decision.
+### GAP-A — Collaborative Thread permissions
+SRS says Sales, Specialist and Manager can collaborate in the same case Thread and customer-facing replies should reach LINE.
+
+Current code is owner-only for Thread → LINE.
+
+Target interpretation:
+- one owner remains authoritative for case KPI and deal attribution
+- authorized collaborators may reply if SRS behavior is retained
+- actual responder is recorded per outbound message
+- financial/ownership actions remain permission controlled
 
 ### GAP-B — Strict root-chat warning
+Current routing is safe because only known case Thread replies are bridged.
 
-Current Lark event parser only bridges messages that have a known root/thread ID; root-level group messages are therefore not routed to LINE, which is safe.
+Missing SRS behavior:
+- when a real user types in the Sales Inbox root/group chat outside a case Thread, never bridge it to LINE
+- post a visible warning telling the user to use Reply in Thread
+- prevent warning echo loops
 
-Customer SRS additionally requires a visible orange warning telling Sales to use Reply in Thread. Current root-level messages are ignored rather than actively warned.
+### GAP-C — 2-way media
+Current:
+- LINE inbound: text/image/sticker
+- Lark → LINE: text
 
-Required:
-- Detect messages sent in the configured Sales Inbox group with no case root.
-- Never send them to LINE.
-- Return/post a warning in Lark without creating a customer route.
-- Avoid warning loops on bot-generated warnings.
-
-### GAP-C — 2-way media coverage
-
-Current state:
-- LINE inbound: text/image/sticker supported.
-- Lark → LINE: text only.
-- LINE inbound image can be surfaced/analyzed.
-
-Customer SRS requires 2-way:
-- JPEG/PNG
+SRS detail requests broader two-way support:
+- image JPEG/PNG
 - PDF/file
 - audio
 - location/GPS
 - sticker
 
-Required:
-- Extend LINE event normalization for audio/file/location and appropriate content metadata.
-- Extend Lark event parsing for image/file/audio/location-like message types.
-- Add Lark media download + LINE media upload/send adapters where APIs permit.
-- Define unsupported conversion behavior explicitly (e.g. sticker compatibility, file size/type limits).
-- Add E2E tests per media type.
+Need API-supported mappings, size/type limits, download/upload adapters and tests.
 
-### GAP-D — Smart Deal command coverage
+### GAP-D — Smart command variants
+Add safe parsing for SRS examples beyond `ปิดยอด <amount>` while always preserving confirmation before mutation.
 
-Current parser accepts `ปิดยอด 45000`.
+### GAP-E — VIP progression
+Need configuration-driven thresholds. If unset, preserve existing VIP status.
 
-SRS examples additionally include:
-- `ยอดเงิน 150000`
-- bare numeric `30000`
+### GAP-F — SLA exact status
+Add canonical backend/Base/Card representation for Fast/Overdue while keeping First Response and Resolution distinct.
 
-Bare-number close is dangerous in normal chat. Engineering interpretation should require the message to be in a known case Thread and should still show Confirm before mutation. It may be implemented only when it is unambiguously a command.
+### GAP-G — Broadcast validation/recovery
+Add LINE ID validation, alias handling and observable safe fallback/retry behavior. Never claim guaranteed recipient delivery.
 
-### GAP-E — VIP auto-upgrade policy
+### GAP-H — AI labels/guidance
+Align explicit business labels and actionable suggestion text where needed.
 
-Current Closed Won flow marks customer Active Customer and recalculates lifetime value, but does not automatically choose `Standard / Gold / Diamond`.
+## Architecture interpretation
 
-Customer SRS requires VIP adjustment but gives no spend thresholds.
+The SRS contains example implementation technologies. The required outcome/security/reliability is authoritative; a stronger/equivalent Cloudflare-native mechanism may replace server-process-specific wording.
 
-Required before deterministic implementation:
-- Put VIP thresholds in configuration (not hard-coded assumptions), e.g. `VIP_GOLD_MIN_THB`, `VIP_DIAMOND_MIN_THB`.
-- Default behavior when thresholds are unset: preserve existing VIP status, never guess.
+Examples:
+- D1 atomic uniqueness/locking instead of process-local `userCreationLocks` correctness authority
+- public Cloudflare Worker HTTPS ingress instead of adding NGINX solely to match a diagram
+- Queue retry/DLQ/idempotency instead of relying on `uncaughtException` / `unhandledRejection`
+- Worker observability instead of durable local `logs/error.log` / `logs/combined.log`
+- HTTP callback processing instead of WebSocket reconnect when WebSocket delivery is not used
 
-### GAP-F — SLA exact representation
+## Lark Base
 
-SRS explicitly wants `SLA_Minutes` and `SLA_Status` with <=5m Fast rule.
+Still exactly three business tables:
+1. `Customers`
+2. `Chat_Tracking`
+3. `Sales_Deals`
 
-Current backend calculates first-response seconds and final card shows elapsed seconds.
+No Product or separate Quotation table is required for the current accepted flow.
 
-Required:
-- Add exact Fast/Overdue presentation.
-- Align Base fields/formulas or store backend-computed equivalent.
-- Preserve first-response vs resolution as separate metrics.
+All final field/API names use **lower snake_case** per `docs/schema-naming-convention.md`, regardless of TitleCase spelling in the source SRS.
 
-### GAP-G — Broadcast semantics
+Necessary Quote/QR/routing/AI/message-audit fields stay inside these same three tables where they are business data; operational idempotency/locks/retry state remains in D1.
 
-SRS says fallback individual send should guarantee 100% delivery. No messaging platform can truthfully guarantee 100% end-user delivery; retries can only improve accepted-request reliability.
+## Before final Base creation
 
-Required safe interpretation:
-- Validate `LINE_User_ID` format before send.
-- Multicast in batches.
-- Retry transient/API failures with idempotency.
-- Optionally fall back to individual push for a failed multicast request when safe.
-- Record accepted/failed/unreachable results where observable.
-- Never claim 100% delivery guarantee.
-
-Add command alias `บรอดแคสต์` if customer wants a general campaign entry point.
-
-## Architecture differences — customer wording vs deployed target
-
-### Reverse Proxy / NGINX
-Customer document names Cloudflare Anycast Tunnel / NGINX Reverse Proxy.
-
-Current architecture is a public Cloudflare Worker endpoint. It already provides HTTPS/edge ingress, so a separate NGINX/Tunnel layer is not required unless the final deployment moves the Bridge Core to a private VM/container/origin.
-
-Recommended target for this repo:
-`LINE/Lark → Cloudflare Worker → Queue/D1/AI → LINE/Lark/Base`
-
-Do not add NGINX only to match a diagram if there is no private origin server.
-
-### Bridge Core Server
-Customer lists Node.js / Go / Python. This repo uses TypeScript on Cloudflare Workers with Node compatibility where needed. This satisfies the logical Bridge Core role while remaining serverless.
-
-### Promise Lock (`userCreationLocks`)
-An in-memory Promise lock is process-local and is not sufficient across multiple Worker isolates/instances. Current D1 uniqueness/atomic operations should remain the authoritative concurrency guard. A process-local lock may be used only as a local optimization, not correctness authority.
-
-### WebSocket auto-reconnect
-Current integration uses HTTP webhooks, not a persistent Lark WebSocket client. WebSocket reconnection is therefore not applicable unless deployment strategy changes to WebSocket event delivery.
-
-### `uncaughtException` / `unhandledRejection`
-These are Node long-lived-process concepts. Cloudflare Workers are request/event scoped. Reliability should instead use:
-- per-event try/catch
-- Queue retries + DLQ
-- idempotency/dedupe
-- structured error logging/observability
-- health/readiness checks
-
-### File logging (`logs/error.log`, `logs/combined.log`)
-Workers do not provide a normal durable local filesystem. Replace with structured Worker logs/logpush/observability and keep business audit records in Base/D1 as appropriate.
-
-## Lark Base schema mismatch
-
-The customer SRS names exactly three tables, which matches the project decision, but the **field contracts differ materially**.
-
-Customer document uses display/business fields such as:
-- `Customer_ID`, `Name`, `LINE_User_ID`, `Customer_Stage`, `VIP_Status`, `Total_Spend_THB`
-- linked `Customer`, `Chat_History`, `Deals`
-- `Customer_Msg_Time`, `Sales_Reply_Time`, `SLA_Minutes`, `SLA_Status`
-- `Deal_Value_THB`, `Sales_Rep`, `Deal_Status`, `Pipeline_Stage`
-
-Current code uses lower snake-case API fields and also stores operationally useful business fields required for Quote/QR history, e.g. quotation snapshot, payment amount/status, root message IDs and CASE/MESSAGE tracking.
-
-Recommended alignment while still keeping **exactly 3 tables**:
-1. Use the customer-visible field names where they are part of the SRS.
-2. Add only necessary supplemental fields inside those same three tables for the implemented workflow (quotation snapshot/payment state/routing metadata) rather than creating Product/Quotation tables.
-3. Prefer backend-calculated IDs/state where Lark formulas/links create brittle setup dependencies.
-4. Create a schema mapping document before creating the Base so code and UI names cannot drift.
-
-## Quote requirement interpretation
-
-The customer SRS says `[ส่งใบเสนอราคา (Flex)]` is one-click, but no Product table/catalog is specified. Therefore the practical accepted flow remains:
-
-`click Quote → manual Lark form → Preview/Confirm → save Sales_Deals snapshot → send LINE Flex`
-
-This is still a one-click entry into the quote workflow, not an impossible auto-quote with no price source.
-
-QR remains:
-
-`click QR → load persisted latest quote/deal amount → Preview/Confirm → generate PromptPay QR → LINE`
-
-## Required implementation order before creating the customer Base
-
-1. Adopt this SRS as the customer requirements baseline.
-2. Resolve/implement team Thread collaboration model while preserving one case owner.
-3. Add root-chat warning guard.
-4. Add required 2-way media types and tests.
-5. Expand close-command parser safely.
-6. Add configurable VIP upgrade policy.
-7. Add <=5m SLA label/fields.
-8. Add broadcast alias, LINE-user validation and safe fallback semantics.
-9. Produce final 3-table schema mapping using customer field names + required supplemental fields.
-10. Run CI/typecheck/unit/bundle gates.
-11. Only then create the Lark Base and execute controlled real E2E.
-
-## Current rule
-
-Until the above gaps are closed, do **not** create the final customer Base from the old `docs/lark-base-schema.md` unchanged. The schema must first be reconciled with the customer SRS.
+1. Preserve the already-working PM 5-function core.
+2. Close the detailed SRS gaps that remain applicable.
+3. Finalize the exact snake_case 3-table schema.
+4. Run exact-HEAD CI/typecheck/tests/Wrangler dry-run.
+5. Then create/configure the Base and run the real controlled E2E.
