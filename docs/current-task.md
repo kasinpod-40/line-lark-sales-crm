@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / 0 BUSINESS-DATA MUTATIONS / CLOUDFLARE READINESS PRE-FLIGHT STARTED / LOCAL INSTALL-SPECIFIC `wrangler.jsonc` NOW GIT-IGNORED / NEXT STEP IS READ-ONLY CLOUDFLARE RESOURCE INVENTORY + OWNER LARK APP/BOT/SALES INBOX CONFIGURATION, THEN BIND EXISTING STACK AND REQUIRE `/health` READY BEFORE CALLBACKS.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED AND VERIFIED / R2 BLOCKED ONLY BY ACCOUNT ENTITLEMENT 10042 / WORKER NOT YET DEPLOYED / NEXT STEP IS ENABLE R2, CREATE THE DEDICATED MEDIA BUCKET, COMPLETE INSTALL-SPECIFIC WRANGLER CONFIG + LARK APP/BOT/SALES INBOX, THEN DEPLOY AND REQUIRE `/health` READY BEFORE CALLBACKS.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -128,18 +128,56 @@ The canonical contract remains:
 
 Do not prefix canonical table names with emoji. Sidebar table icons are optional presentation-only UI polish and are not a runtime blocker.
 
-## Cloudflare readiness pre-flight — active
+## Dedicated Cloudflare resources — locked
 
-Fresh Cloudflare documentation was rechecked before changing installation/config handling. Current Wrangler docs confirm:
-- `wrangler d1 list` enumerates remote D1 databases and supports JSON output
-- `wrangler r2 bucket list` enumerates R2 buckets
-- `wrangler queues list` enumerates Queues
-- D1/R2/Queue bindings are declared in the Wrangler configuration
-- plain vars belong in Wrangler config while secrets remain encrypted Worker secrets
+The owner explicitly requires every Cloudflare resource for this product to be dedicated to this project. Do not reuse or bind BNK, legacy CRM, or Social MKT resources.
 
-A concrete repository safety gap was fixed before asking the owner to bind installation-specific IDs: local `wrangler.jsonc` is now ignored by Git so personal Base/resource IDs are not accidentally committed. The canonical reusable template remains `wrangler.jsonc.example`.
+Dedicated resource names:
+- Worker: `line-lark-sales-crm`
+- D1: `line-lark-sales-crm`
+- R2: `line-lark-sales-crm-media`
+- Queue: `line-lark-sales-crm-events`
+- DLQ: `line-lark-sales-crm-events-dlq`
 
-No Cloudflare resource has been created/deleted/changed by this pre-flight. External callbacks remain disabled until `/health` is HTTP 200 with `configuration.ready=true`.
+Existing resources with names beginning `bnk-`, `crm-`, or `social-mkt-` are out of scope and must remain untouched.
+
+## Cloudflare runtime provisioning — live state
+
+Verified on the owner's Cloudflare account:
+- dedicated D1 `line-lark-sales-crm` created successfully in APAC
+- dedicated Queue `line-lark-sales-crm-events` created successfully
+- dedicated DLQ `line-lark-sales-crm-events-dlq` created successfully
+- Queue/DLQ currently have no producers/consumers because the project Worker has not been deployed yet
+- Worker `line-lark-sales-crm` does not yet exist; this is intentional until bindings/secrets/readiness config are complete
+- R2 API returns `10042` / not entitled; account-level R2 must be enabled before `line-lark-sales-crm-media` can be created
+
+The local install-specific `wrangler.jsonc` is Git-ignored. It currently binds the dedicated D1 and Queue/DLQ so migrations can target the correct project resources without committing installation IDs.
+
+### D1 migration milestone — complete
+
+The dedicated D1 was empty before migration except for Cloudflare's `_cf_KV` table.
+
+Migration apply completed successfully in canonical manifest order:
+1. `0001_operational_state.sql` — success
+2. `0002_srs_media_and_campaign_observability.sql` — success
+
+Post-apply `wrangler d1 migrations list ... --remote` returned `No migrations to apply!`.
+
+Verified remote tables now include:
+- `_cf_KV`
+- `action_dedupe`
+- `campaign_batches`
+- `case_routes`
+- `d1_migrations`
+- `event_dedupe`
+- `interaction_drafts`
+- `media_assets`
+- `qr_assets`
+- `sqlite_sequence`
+
+A pre-apply migration-list request returned Cloudflare code `7403`, but the authoritative apply on the same target succeeded, the post-apply migration list is clean, and direct schema readback confirms the expected tables. No rollback or re-apply is required.
+
+External callbacks remain disabled until `/health` is HTTP 200 with `configuration.ready=true`.
 
 ## Live filter readback arity normalization
 
@@ -182,45 +220,45 @@ GitHub CI:
 - unit/contract tests: **72/72 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-The only config-bearing change in this checkpoint is repository safety: local `wrangler.jsonc` is git-ignored. Product behavior and runtime Base state are unchanged.
+Cloudflare D1/Queue/DLQ creation and D1 migration application are runtime provisioning milestones, not source/config/test/migration-file changes. The current-task update that records them is documentation-only.
 
-Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
+Any future source/config/test/migration-file change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
 ## Delivery model — locked
 
 Phase A now:
 - owner's personal Lark workspace/Base
 - owner-controlled Lark App/Bot and `LINE Sales Inbox`
-- owner's existing Cloudflare Worker/D1/R2/Queue/DLQ
+- dedicated project-specific Cloudflare Worker/D1/R2/Queue/DLQ in the owner's existing Cloudflare account
 - controlled reference/test LINE OA
 - no real customer production credentials/business data in private reference Base
 
 Phase B when PM formally starts:
-- Cloudflare remains the same owner infrastructure
+- Cloudflare account ownership remains the owner's infrastructure unless the commercial agreement explicitly changes it
+- use the same verified release and the same dedicated product resource pattern
 - change/transfer only Lark-controlled resources as required
-- keep the same verified release/schema/migrations/business logic
 - replace only Lark-specific credentials/resource IDs/configuration
 - require `/health` ready and rerun affected E2E before PM presentation
 
-This is not a Cloudflare migration and not DEV → PROD promotion.
+This is not a DEV → PROD promotion.
 
 Phase C customer sale:
 - same verified product blueprint/release/schema/migrations/workflow
 - customer-specific values are config/secrets/bindings
 - no per-customer business-logic fork
+- customer installations must not reuse unrelated project resources
 
 ## Next work
 
-1. Stop the local `lark:base:ux:visible-ui` server; the visibility membership lane is complete and should not be rerun.
-2. Skip manual column reordering; accepted as non-blocking. Optional visual/icon polish must not block runtime readiness.
-3. Run a read-only Cloudflare inventory on the owner's existing account (`whoami`, D1 list, R2 bucket list, Queues list) and reuse existing resources where appropriate; do not create duplicates blindly.
-4. Configure/verify the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
-5. Create the local, untracked `wrangler.jsonc` from `wrangler.jsonc.example`, bind the existing D1/R2/Queue/DLQ/optional AI resources, and set installation vars including the existing golden Base IDs.
-6. Put the six required secrets with Wrangler without committing their values; add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
-7. Apply D1 migrations in manifest order only after the exact target DB is confirmed.
-8. Deploy the Worker and require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
-9. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
-10. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+1. Enable R2 at the Cloudflare account level, then create only the dedicated bucket `line-lark-sales-crm-media`; do not recreate D1/Queue/DLQ.
+2. Add the dedicated `MEDIA_BUCKET` R2 binding and optional `AI` binding to the local untracked `wrangler.jsonc`.
+3. Configure/verify the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
+4. Complete local installation vars for the existing golden Base and Sales Inbox.
+5. Put the six required secrets with Wrangler without committing their values; add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
+6. Deploy the dedicated Worker `line-lark-sales-crm` for the first time with D1/R2/Queue/DLQ bindings.
+7. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
+8. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
+9. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
