@@ -54,9 +54,27 @@ export function canonicalizeViewFieldReferences(value, fieldIdsByName = {}) {
   return visit(value);
 }
 
+function canonicalizeUnaryFilterTuples(value) {
+  if (Array.isArray(value)) {
+    const normalizedChildren = value.map(canonicalizeUnaryFilterTuples);
+    if (
+      normalizedChildren.length === 3 &&
+      (normalizedChildren[1] === "empty" || normalizedChildren[1] === "non_empty") &&
+      normalizedChildren[2] === null
+    ) {
+      return normalizedChildren.slice(0, 2);
+    }
+    return normalizedChildren;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, canonicalizeUnaryFilterTuples(child)]));
+  }
+  return value;
+}
+
 export function viewPropertyMatches(payload, expected, fieldIdsByName = {}) {
-  const canonicalPayload = canonicalizeViewFieldReferences(payload, fieldIdsByName);
-  const canonicalExpected = canonicalizeViewFieldReferences(expected, fieldIdsByName);
+  const canonicalPayload = canonicalizeUnaryFilterTuples(canonicalizeViewFieldReferences(payload, fieldIdsByName));
+  const canonicalExpected = canonicalizeUnaryFilterTuples(canonicalizeViewFieldReferences(expected, fieldIdsByName));
   const unwrapValue = canonicalExpected && typeof canonicalExpected === "object" && !Array.isArray(canonicalExpected) && Object.keys(canonicalExpected).length === 1
     ? canonicalExpected[Object.keys(canonicalExpected)[0]]
     : undefined;
