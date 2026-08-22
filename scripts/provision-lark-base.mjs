@@ -140,12 +140,11 @@ function firstStringByKeys(payload, keys) {
 }
 
 function tableMap(payload) {
-  const desired = new Set(contract.tables.map((table) => table.name));
   const map = new Map();
   for (const obj of collectObjects(payload)) {
     const name = typeof obj.table_name === "string" ? obj.table_name : typeof obj.name === "string" ? obj.name : "";
-    const id = typeof obj.table_id === "string" ? obj.table_id : typeof obj.id === "string" ? obj.id : "";
-    if (desired.has(name) && id) map.set(name, { id, raw: obj });
+    const id = typeof obj.table_id === "string" ? obj.table_id : "";
+    if (name && id) map.set(name, { id, raw: obj });
   }
   return map;
 }
@@ -162,15 +161,15 @@ function fieldMap(payload) {
 
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
-async function listTables(baseToken) {
-  let last = null;
+async function listTables(baseToken, requiredNames = []) {
+  let last = new Map();
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const response = runLark(["base", "+table-list", "--base-token", baseToken], "Lark table list");
     last = tableMap(response);
-    if (last.size >= contract.tables.length || attempt === 5) return last;
+    if (requiredNames.every((name) => last.has(name)) || attempt === 5) return last;
     await sleep(800);
   }
-  return last || new Map();
+  return last;
 }
 
 function listFields(baseToken, tableName) {
@@ -199,6 +198,7 @@ async function apply(args) {
   runRaw(["auth", "status", "--json", "--verify"], "Lark user auth status", { json: true });
 
   let baseToken = args.baseToken.trim();
+  const createdNames = [];
   if (!baseToken) {
     const firstTable = contract.tables[0];
     const response = runLark([
@@ -210,9 +210,10 @@ async function apply(args) {
     ], "Create golden Lark Base");
     baseToken = firstStringByKeys(response, ["app_token", "base_token"]);
     if (!baseToken) throw new Error("Base was created but lark-cli response did not expose app_token/base_token");
+    createdNames.push(firstTable.name);
   }
 
-  let tables = await listTables(baseToken);
+  let tables = await listTables(baseToken, createdNames);
   for (const table of contract.tables) {
     if (!tables.has(table.name)) {
       runLark([
@@ -221,7 +222,8 @@ async function apply(args) {
         "--name", table.name,
         "--fields", JSON.stringify(table.fields),
       ], `Create table ${table.name}`);
-      tables = await listTables(baseToken);
+      createdNames.push(table.name);
+      tables = await listTables(baseToken, createdNames);
       if (!tables.has(table.name)) throw new Error(`Table ${table.name} creation returned success but table is not discoverable yet`);
     }
   }
@@ -250,12 +252,15 @@ async function apply(args) {
     }
   }
 
-  tables = await listTables(baseToken);
-  const exact = contract.tables.every((table) => tables.has(table.name));
-  if (!exact) throw new Error("Final table verification failed");
+  tables = await listTables(baseToken, contract.tables.map((table) => table.name));
+  const missingTables = contract.tables.map((table) => table.name).filter((name) => !tables.has(name));
+  if (missingTables.length) throw new Error(`Final table verification failed; missing: ${missingTables.join(", ")}`);
 
-  const unexpectedContractNames = [...tables.keys()].filter((name) => !contract.tables.some((table) => table.name === name));
-  if (unexpectedContractNames.length) throw new Error(`Unexpected contract table names detected: ${unexpectedContractNames.join(", ")}`);
+  const allowed = new Set(contract.tables.map((table) => table.name));
+  const unexpected = [...tables.keys()].filter((name) => !allowed.has(name));
+  if (unexpected.length) {
+    throw new Error(`Base contains unexpected table(s): ${unexpected.join(", ")}. The golden contract requires exactly Customers, Chat_Tracking, Sales_Deals.`);
+  }
 
   const result = {
     ok: true,
