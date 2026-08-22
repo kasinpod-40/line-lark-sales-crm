@@ -234,9 +234,31 @@ export class LarkClient {
   }
 }
 
+function decodeBase64Bytes(value: string): Uint8Array {
+  let binary: string;
+  try {
+    binary = atob(value);
+  } catch {
+    throw new Error("Invalid base64 Lark encrypted callback payload");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
 export async function decryptLarkPayload(env: Env, encrypted: string): Promise<string> {
-  if (!env.LARK_ENCRYPT_KEY?.trim()) throw new Error("LARK_ENCRYPT_KEY is required for encrypted callbacks");
-  const sdk = await import("@larksuiteoapi/node-sdk");
-  const cipher = new sdk.AESCipher(env.LARK_ENCRYPT_KEY.trim());
-  return await Promise.resolve(cipher.decrypt(encrypted));
+  const encryptKey = env.LARK_ENCRYPT_KEY?.trim();
+  if (!encryptKey) throw new Error("LARK_ENCRYPT_KEY is required for encrypted callbacks");
+
+  const encryptedBytes = decodeBase64Bytes(encrypted);
+  if (encryptedBytes.byteLength < 32 || (encryptedBytes.byteLength - 16) % 16 !== 0) {
+    throw new Error("Invalid Lark encrypted callback payload length");
+  }
+
+  const keyDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptKey));
+  const key = await crypto.subtle.importKey("raw", keyDigest, { name: "AES-CBC" }, false, ["decrypt"]);
+  const iv = encryptedBytes.slice(0, 16);
+  const ciphertext = encryptedBytes.slice(16);
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, ciphertext);
+  return new TextDecoder().decode(plaintext);
 }
