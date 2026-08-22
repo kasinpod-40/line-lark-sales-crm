@@ -9,6 +9,7 @@ export type ActionIntent =
   | "payment_slip"
   | "delivery_address"
   | "delivery_question"
+  | "demo_request"
   | "lost"
   | "support"
   | "small_talk"
