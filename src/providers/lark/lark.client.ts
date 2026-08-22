@@ -2,12 +2,20 @@ import type { Env } from "../../config/env";
 import { asString, isRecord } from "../../utils/json";
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+const DEFAULT_RESOURCE_LIMIT = 25 * 1024 * 1024;
 
 export interface LarkDownloadedResource {
   bytes: ArrayBuffer;
   mime_type: string;
   file_name?: string;
   size_bytes: number;
+}
+
+export class LarkResourceTooLargeError extends Error {
+  constructor(public readonly max_bytes: number) {
+    super(`Lark resource exceeds bridge memory limit (${Math.round(max_bytes / 1024 / 1024)} MB)`);
+    this.name = "LarkResourceTooLargeError";
+  }
 }
 
 async function tenantAccessToken(env: Env): Promise<string> {
@@ -55,6 +63,37 @@ async function larkBinaryFetch(env: Env, path: string): Promise<Response> {
     throw new Error(`Lark resource ${path} failed: ${response.status} ${text.slice(0, 1000)}`);
   }
   return response;
+}
+
+async function readResponseWithLimit(response: Response, maxBytes: number): Promise<ArrayBuffer> {
+  const declared = Number(response.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > maxBytes) throw new LarkResourceTooLargeError(maxBytes);
+  if (!response.body) return new ArrayBuffer(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("bridge content limit exceeded").catch(() => undefined);
+        throw new LarkResourceTooLargeError(maxBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged.buffer;
 }
 
 function extractMessageId(response: unknown): string {
@@ -162,12 +201,17 @@ export class LarkClient {
     return key;
   }
 
-  async downloadMessageResource(messageId: string, fileKey: string, resourceType: "image" | "file"): Promise<LarkDownloadedResource> {
+  async downloadMessageResource(
+    messageId: string,
+    fileKey: string,
+    resourceType: "image" | "file",
+    maxBytes = DEFAULT_RESOURCE_LIMIT,
+  ): Promise<LarkDownloadedResource> {
     const response = await larkBinaryFetch(
       this.env,
       `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(fileKey)}?type=${resourceType}`,
     );
-    const bytes = await response.arrayBuffer();
+    const bytes = await readResponseWithLimit(response, Math.max(1024, maxBytes));
     if (bytes.byteLength <= 0) throw new Error("Lark message resource is empty");
     return {
       bytes,
