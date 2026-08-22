@@ -39,12 +39,6 @@ function fieldIdToNameMap(fieldIdsByName) {
   return reverse;
 }
 
-function resolveFieldId(fieldIdsByName, fieldName) {
-  const id = fieldIdsByName?.[fieldName];
-  if (typeof id !== "string" || !id.trim()) throw new Error(`Missing Lark field id for ${fieldName}`);
-  return id.trim();
-}
-
 export function canonicalizeViewFieldReferences(value, fieldIdsByName = {}) {
   const reverse = fieldIdToNameMap(fieldIdsByName);
 
@@ -74,36 +68,7 @@ export function viewPropertyMatches(payload, expected, fieldIdsByName = {}) {
   return false;
 }
 
-export function mutationDesiredForViewProperty(property, desired, fieldIdsByName = {}) {
-  if (property === "visible_fields") {
-    return {
-      visible_fields: (desired.visible_fields || []).map((fieldName) => resolveFieldId(fieldIdsByName, fieldName)),
-    };
-  }
-  if (property === "group") {
-    return {
-      group_config: (desired.group_config || []).map((item) => ({
-        ...item,
-        field: resolveFieldId(fieldIdsByName, item.field),
-      })),
-    };
-  }
-  if (property === "sort") {
-    return {
-      sort_config: (desired.sort_config || []).map((item) => ({
-        ...item,
-        field: resolveFieldId(fieldIdsByName, item.field),
-      })),
-    };
-  }
-  return desired;
-}
-
-export function readbackDesiredForViewProperty(property, desired) {
-  // Live Lark CLI readback resolves view field references to canonical field names,
-  // while current official mutation tests use concrete fld... IDs for visible/group/sort.
-  // Keep readback expectations in stable contract-name form and build a separate
-  // mutation payload with mutationDesiredForViewProperty().
+function cloneViewPropertyDesired(property, desired) {
   if (property === "visible_fields") {
     return {
       visible_fields: [...(desired.visible_fields || [])],
@@ -120,4 +85,26 @@ export function readbackDesiredForViewProperty(property, desired) {
     };
   }
   return desired;
+}
+
+export function mutationDesiredForViewProperty(property, desired) {
+  // The public current lark-cli help contract documents field *names* for
+  // +view-set-visible-fields, +view-set-group and +view-set-sort, e.g.
+  // {"visible_fields":["Name","Status"]},
+  // {"group_config":[{"field":"Status","desc":false}]}, and
+  // {"sort_config":[{"field":"Priority","desc":true}]}.
+  //
+  // The official CLI unit tests also accept fld... IDs, but the CLI E2E coverage
+  // explicitly says View workflows do not have deterministic live coverage.
+  // The golden Base live target has already shown getters returning canonical
+  // field names, so use the documented name-based write contract and keep
+  // concrete tbl.../vew... IDs only for resource addressing.
+  return cloneViewPropertyDesired(property, desired);
+}
+
+export function readbackDesiredForViewProperty(property, desired) {
+  // Live Lark CLI readback resolves view field references to canonical field names.
+  // Keep expected state in the same stable contract-name form. The matcher still
+  // canonicalizes alternate fld... ID-shaped readback if Lark returns it.
+  return cloneViewPropertyDesired(property, desired);
 }
