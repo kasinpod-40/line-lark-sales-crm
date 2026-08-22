@@ -23,18 +23,24 @@ async function run(execute) {
     const base = bitable.base;
     if (!await base.isEditable()) throw new Error('Current Base is not editable by this user');
 
-    const tableMetas = await base.getTableMetaList();
-    const tableByName = uniqueByName(tableMetas, 'Table');
     const results = [];
     let mutationCount = 0;
     let membershipCount = 0;
     let orderedCount = 0;
     let unsupportedCount = 0;
+    let tableContextReads = 0;
 
     for (const tableContract of contract.tables || []) {
-      const tableMeta = tableByName.get(tableContract.name);
-      if (!tableMeta) throw new Error(`Missing Table: ${tableContract.name}`);
-      const table = await base.getTableByName(tableContract.name);
+      // Resolve the canonical table directly instead of using one eager
+      // getTableMetaList() snapshot. The live in-Base SDK can briefly expose a
+      // stale/empty metadata list while the Extension frame is reconnecting
+      // after the local service restarts. getTableByName() is the documented
+      // canonical resolver, so retry that boundedly before declaring the Base
+      // context wrong. This never creates or mutates a table.
+      const resolvedTable = await getTableByNameEventually(base, tableContract.name);
+      const table = resolvedTable.table;
+      tableContextReads += resolvedTable.reads;
+
       const fieldMetas = await table.getFieldMetaList();
       const fieldByName = uniqueByName(fieldMetas, `${tableContract.name} Field`);
       const nameById = new Map(fieldMetas.map((field) => [requireId(field, `${tableContract.name} field`), field.name]));
@@ -144,6 +150,7 @@ async function run(execute) {
       order_manual_views: orderMismatches.length,
       mutation_views: mutationCount,
       unsupported_views: unsupportedCount,
+      base_context_table_reads: tableContextReads,
       failures,
       order_mismatches: orderMismatches,
       field_order: {
@@ -167,6 +174,71 @@ async function run(execute) {
   } finally {
     setBusy(false);
   }
+}
+
+async function getTableByNameEventually(base, tableName, attempts = 8) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const table = await base.getTableByName(tableName);
+      if (table) {
+        let resolvedName = tableName;
+        if (typeof table.getName === 'function') {
+          const liveName = await table.getName();
+          if (typeof liveName === 'string' && liveName.trim()) resolvedName = liveName.trim();
+        }
+        if (resolvedName === tableName) return { table, reads: attempt };
+        lastError = new Error(`resolved as ${resolvedName}`);
+      } else {
+        lastError = new Error('resolver returned no table');
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < attempts) await sleep(150 * attempt);
+  }
+
+  const context = await describeBaseContext(base);
+  const lastMessage = lastError instanceof Error ? lastError.message : String(lastError || 'unknown');
+  throw new Error(
+    `Base context not ready or wrong Base after ${attempts} reads; required_table=${tableName}; `
+    + `available_tables=[${context.availableTables.join(', ')}]; selection_table_id=${context.selectionTableId || 'none'}; `
+    + `active_table=${context.activeTableName || 'none'}; last_error=${lastMessage}`
+  );
+}
+
+async function describeBaseContext(base) {
+  let availableTables = [];
+  let selectionTableId = '';
+  let activeTableName = '';
+
+  try {
+    const metas = await base.getTableMetaList();
+    if (Array.isArray(metas)) {
+      availableTables = metas
+        .map((item) => typeof item?.name === 'string' ? item.name.trim() : '')
+        .filter(Boolean);
+    }
+  } catch {}
+
+  try {
+    const selection = await base.getSelection();
+    if (typeof selection?.tableId === 'string') selectionTableId = selection.tableId;
+  } catch {}
+
+  try {
+    const activeTable = await base.getActiveTable();
+    if (activeTable && typeof activeTable.getName === 'function') {
+      const name = await activeTable.getName();
+      if (typeof name === 'string') activeTableName = name.trim();
+    }
+  } catch {}
+
+  return { availableTables, selectionTableId, activeTableName };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function uniqueByName(items, label) {
