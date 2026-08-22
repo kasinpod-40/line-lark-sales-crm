@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { isNoOpMutationFailure, readbackDesiredForViewProperty, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
+import { isNoOpMutationFailure, mutationDesiredForViewProperty, readbackDesiredForViewProperty, viewPropertyMatches } from "./lark-cli-idempotency.mjs";
 import { resourceMapFromList } from "./lark-cli-resource-list.mjs";
 import { reconcileIfNeeded, verifyEventually } from "./lark-eventual-reconcile.mjs";
 
@@ -225,19 +225,22 @@ function getViewProperty(baseToken, table, viewName, property) {
   ], `Read ${property} ${table}.${viewName}`);
 }
 
-function reconcileViewProperty(baseToken, table, viewName, property, desired, readbackDesired = desired) {
+function reconcileViewProperty(baseToken, table, viewName, property, desired, fieldIds) {
   const commands = viewPropertyCommands[property];
   if (!commands) throw new Error(`Unsupported view property reconcile: ${property}`);
 
+  const readbackDesired = readbackDesiredForViewProperty(property, desired, fieldIds);
+  const mutationDesired = mutationDesiredForViewProperty(property, desired, fieldIds);
+
   return reconcileIfNeeded({
     read: () => getViewProperty(baseToken, table, viewName, property),
-    matches: (payload) => viewPropertyMatches(payload, readbackDesired),
+    matches: (payload) => viewPropertyMatches(payload, readbackDesired, fieldIds),
     write: () => runLarkMutation([
       "base", commands.set,
       "--base-token", baseToken,
       "--table-id", table,
       "--view-id", viewName,
-      "--json", JSON.stringify(desired),
+      "--json", JSON.stringify(mutationDesired),
     ], `Set ${property} ${table}.${viewName}`),
   });
 }
@@ -252,18 +255,18 @@ function setViewConfig(baseToken, table, view, fieldIds) {
   const stats = { changed: 0, unchanged: 0, no_op_recovered: 0 };
   if (view.visible_fields) {
     const desired = { visible_fields: view.visible_fields };
-    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", desired, readbackDesiredForViewProperty("visible_fields", desired, fieldIds)));
+    mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "visible_fields", desired, fieldIds));
   }
-  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter));
-  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group, readbackDesiredForViewProperty("group", view.group, fieldIds)));
-  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort, readbackDesiredForViewProperty("sort", view.sort, fieldIds)));
+  if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "filter", view.filter, fieldIds));
+  if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "group", view.group, fieldIds));
+  if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, table, view.name, "sort", view.sort, fieldIds));
   return stats;
 }
 
-function verifyViewPropertyEventually(baseToken, table, viewName, property, desired) {
+function verifyViewPropertyEventually(baseToken, table, viewName, property, desired, fieldIds) {
   const result = verifyEventually({
     read: () => getViewProperty(baseToken, table, viewName, property),
-    matches: (payload) => viewPropertyMatches(payload, desired),
+    matches: (payload) => viewPropertyMatches(payload, desired, fieldIds),
     sleep: sleepMs,
   });
   if (!result.ok) {
@@ -279,11 +282,11 @@ function verifyTableViewState(baseToken, tableContract, fieldIds) {
   for (const view of tableContract.views) {
     if (view.visible_fields) {
       const desired = { visible_fields: view.visible_fields };
-      reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "visible_fields", readbackDesiredForViewProperty("visible_fields", desired, fieldIds));
+      reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "visible_fields", readbackDesiredForViewProperty("visible_fields", desired, fieldIds), fieldIds);
     }
-    if (view.filter) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "filter", view.filter);
-    if (view.group) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "group", readbackDesiredForViewProperty("group", view.group, fieldIds));
-    if (view.sort) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "sort", readbackDesiredForViewProperty("sort", view.sort, fieldIds));
+    if (view.filter) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "filter", view.filter, fieldIds);
+    if (view.group) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "group", readbackDesiredForViewProperty("group", view.group, fieldIds), fieldIds);
+    if (view.sort) reads += verifyViewPropertyEventually(baseToken, tableContract.name, view.name, "sort", readbackDesiredForViewProperty("sort", view.sort, fieldIds), fieldIds);
   }
   return reads;
 }
