@@ -37,6 +37,7 @@
         },
         { "type": "text", "name": "assigned_sales_id" },
         { "type": "text", "name": "assigned_sales_name" },
+        { "type": "user", "name": "sales", "multiple": false },
         { "type": "text", "name": "ai_intent" },
         { "type": "text", "name": "ai_intent_label" },
         { "type": "text", "name": "buyer_intent" },
@@ -91,6 +92,7 @@
         { "type": "datetime", "name": "sales_reply_time", "style": { "format": "yyyy-MM-dd HH:mm" } },
         { "type": "text", "name": "assigned_sales" },
         { "type": "text", "name": "assigned_sales_id" },
+        { "type": "user", "name": "sales", "multiple": false },
         { "type": "text", "name": "ai_intent" },
         { "type": "text", "name": "lead_quality" },
         {
@@ -164,6 +166,7 @@
         { "type": "number", "name": "deal_value_thb", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
         { "type": "text", "name": "sales_id" },
         { "type": "text", "name": "sales_rep" },
+        { "type": "user", "name": "sales", "multiple": false },
         {
           "type": "select",
           "name": "deal_status",
