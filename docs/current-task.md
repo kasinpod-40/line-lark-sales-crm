@@ -1,10 +1,10 @@
 # Current Task — LINE × Lark Sales CRM
 
-Last updated: 2026-08-22 (ICT)
+Last updated: 2026-08-23 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE / R2 NOT REQUIRED / WORKER FIRST DEPLOY COMPLETE / `/health` HTTP 200 + `configuration.ready=true` / LINE WEBHOOK CUT OVER AND VERIFIED / LARK EVENT CALLBACK URL-VERIFICATION CHALLENGE PATCH CI-PASSED AND AWAITS LIVE WORKER DEPLOY / CONTROLLED E2E NOT YET COMPLETE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE / R2 NOT REQUIRED / WORKER FIRST DEPLOY COMPLETE / `/health` HTTP 200 + `configuration.ready=true` / LINE WEBHOOK CUT OVER AND VERIFIED / LARK ENCRYPTED CALLBACK ROOT CAUSE FIXED WITH WORKERS WEB CRYPTO + CI #199 SUCCESS / PATCH AWAITS LIVE WORKER DEPLOY / CONTROLLED E2E NOT YET COMPLETE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -127,28 +127,40 @@ LINE Developers verification returned **Success**. `Use webhook` and `Webhook re
 
 This is a cutover: the LINE Messaging API channel has one webhook destination, so the old Worker no longer receives this OA's webhook events directly.
 
-## Lark callback URL-verification incident — patch ready
+## Lark encrypted callback incident — root cause fixed, live deploy pending
 
-When switching Lark Event Configuration from persistent connection to `Send notifications to developer's server`, Lark returned:
+When switching Lark Event Configuration to `Send notifications to developer's server`, the console returned:
 
 `Challenge code didn't get response`
 
-Root cause in reusable code: the URL-verification challenge was placed behind runtime verification-token comparison. Lark requires the received `challenge` value to be echoed immediately during request-URL ownership verification.
+Runtime evidence established the exact failure chain:
+- Lark POST reaches `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark`
+- safe diagnostic showed `encrypted=true`, body size 206 bytes
+- decrypt failed immediately with `ReferenceError` before a challenge could be returned
+- plaintext challenge probes were already HTTP 200, so URL/DNS/Cloudflare ingress were not the blocker
 
-Minimal reusable patch:
-- `src/routes/lark/webhook.route.ts` now returns `{ challenge }` immediately for URL-verification requests
-- normal Lark event and Card Action callbacks still require `LARK_VERIFICATION_TOKEN`
-- no Base/D1/Queue/schema/media architecture changed
-- added `test/lark-webhook.test.cjs` covering immediate challenge echo and retained token enforcement for non-challenge callbacks
+Root cause: `decryptLarkPayload()` dynamically imported `@larksuiteoapi/node-sdk` and used its Node-oriented `AESCipher`; that path is not safe in the Cloudflare Workers runtime used by this product.
+
+Minimal reusable fix:
+- callback decryption now uses native Web Crypto only
+- derive AES key as SHA-256 of Lark Encrypt Key
+- base64-decode encrypted payload
+- first 16 bytes are the IV
+- decrypt remaining bytes with AES-256-CBC
+- no Node SDK import occurs on the callback decrypt path
+- normal event/card verification-token enforcement remains unchanged
+- regression test encrypts a Lark-shaped URL-verification payload using the same protocol and verifies encrypted challenge decrypt + echo
 
 Exact verified code/test HEAD:
-`4c256e591f9f42b0cb69d6db41d96c388d4788a0`
+`ccfcc9c196121dd00c9375a48cf1ae17ea05418e`
 
 GitHub CI:
-- run `32585641038` / run #195
+- run `32592036251` / run #199
+- job `97077259162`
 - result: **SUCCESS**
+- full `npm run check`: **PASS**
 
-The currently live Worker must be updated to this exact code-bearing HEAD before retrying Lark Request URL verification.
+The live Worker still needs this verified patch deployed before retrying Lark Request URL verification.
 
 ## Terminal operator-safety rule — locked
 
@@ -168,11 +180,11 @@ PM/customer installations use the same verified release and resource pattern. Cu
 
 ## Next work
 
-1. Sync Mac to exact code/test HEAD `4c256e591f9f42b0cb69d6db41d96c388d4788a0` (documentation-only handoff commits may follow it).
-2. Deploy the existing golden Worker with the already-configured local `wrangler.jsonc` and existing Cloudflare secrets; do not recreate D1/Queue/DLQ and do not re-run migrations.
+1. Sync Mac to exact verified code/test HEAD `ccfcc9c196121dd00c9375a48cf1ae17ea05418e` (documentation-only handoff commits may follow it).
+2. Deploy the existing golden Worker with the already-configured local `wrangler.jsonc` and existing Cloudflare secrets; do not recreate D1/Queue/DLQ and do not rerun migrations.
 3. Recheck `/health` remains HTTP 200 with `configuration.ready=true`.
-4. Retry Lark Event Configuration Request URL `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark`; URL-verification challenge must pass.
-5. Add `im.message.receive_v1` and configure Card callback/action URL on the same Worker route as required.
+4. Keep `wrangler tail` open and retry Lark Event Configuration Request URL `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark` once. Expected diagnostic: encrypted callback parses successfully and `challenge_echo` is logged.
+5. After URL verification passes, add `im.message.receive_v1` and configure Card callback/action URL on the same Worker route.
 6. Run controlled E2E beginning with LINE text → one blue Case Card + Thread in `LINE Sales Inbox`.
 7. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
 8. Replace demo PromptPay configuration before any real payment/QR use.
