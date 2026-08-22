@@ -1,5 +1,8 @@
 import type { Env } from "../config/env";
+import { actionGuidance, intentLabel, leadQuality } from "../ai/presentation";
 import type { CustomerSnapshot, DealSnapshot, CaseRoute, QuoteDraft, SalesPerformance } from "../core/models";
+import { calculateSla } from "../core/sla";
+import { isValidLineUserId } from "../providers/line/line.provider";
 import { asBoolean, asNumber, asString, isRecord, type UnknownRecord } from "../utils/json";
 
 interface BaseRecord {
@@ -19,6 +22,22 @@ interface MessageTrackingInput {
   message_text: string;
   event_at: number;
 }
+
+const CUSTOMER_STAGE = {
+  NEW: "🌱 New Lead",
+  CONTACTED: "💬 Contacted",
+  QUOTATION: "📄 Quotation Sent",
+  ACTIVE: "🏆 Active Customer",
+  INACTIVE: "💤 Inactive",
+} as const;
+
+const VIP_STATUS = {
+  STANDARD: "Standard",
+  GOLD: "🥇 Gold VIP",
+  DIAMOND: "💎 Diamond VIP",
+} as const;
+
+const CLOSED_WON_VALUES = new Set(["Closed Won", "Closed Won 🏆"]);
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
@@ -63,9 +82,43 @@ function normalizeRecord(value: unknown): BaseRecord | null {
   return recordId ? { record_id: recordId, fields } : null;
 }
 
-function stageForBase(stage: string): string {
-  if (stage === "Won") return "Active Customer";
-  return stage || "New Lead";
+function incomingCustomerStage(stage: string): string {
+  if (stage === "Won" || stage === "Active Customer" || stage === CUSTOMER_STAGE.ACTIVE) return CUSTOMER_STAGE.ACTIVE;
+  if (stage === "Lost" || stage === "Inactive" || stage === CUSTOMER_STAGE.INACTIVE) return CUSTOMER_STAGE.INACTIVE;
+  if (stage === "Contacted" || stage === CUSTOMER_STAGE.CONTACTED) return CUSTOMER_STAGE.CONTACTED;
+  if (stage === "Quotation Sent" || stage === CUSTOMER_STAGE.QUOTATION) return CUSTOMER_STAGE.QUOTATION;
+  return CUSTOMER_STAGE.NEW;
+}
+
+function preservedCustomerStage(existing: string, incoming: string): string {
+  if (existing === CUSTOMER_STAGE.ACTIVE) return existing;
+  if (existing === CUSTOMER_STAGE.QUOTATION) return incoming === CUSTOMER_STAGE.ACTIVE ? incoming : existing;
+  if (existing === CUSTOMER_STAGE.CONTACTED) {
+    if (incoming === CUSTOMER_STAGE.ACTIVE || incoming === CUSTOMER_STAGE.QUOTATION) return incoming;
+    return existing;
+  }
+  if (existing === CUSTOMER_STAGE.INACTIVE && incoming === CUSTOMER_STAGE.NEW) return CUSTOMER_STAGE.NEW;
+  return incoming;
+}
+
+export function vipStatusForSpend(
+  totalSpendThb: number,
+  currentVipStatus: string,
+  goldMinRaw?: string,
+  diamondMinRaw?: string,
+): string {
+  const goldMin = asNumber(goldMinRaw, 0);
+  const diamondMin = asNumber(diamondMinRaw, 0);
+  const hasGold = goldMin > 0;
+  const hasDiamond = diamondMin > 0;
+  if (!hasGold && !hasDiamond) return currentVipStatus || VIP_STATUS.STANDARD;
+  if (hasDiamond && totalSpendThb >= diamondMin) return VIP_STATUS.DIAMOND;
+  if (hasGold && totalSpendThb >= goldMin) return VIP_STATUS.GOLD;
+  return VIP_STATUS.STANDARD;
+}
+
+function isClosedWon(value: unknown): boolean {
+  return CLOSED_WON_VALUES.has(asString(value));
 }
 
 function dealFromRecord(record: BaseRecord): DealSnapshot {
@@ -75,7 +128,7 @@ function dealFromRecord(record: BaseRecord): DealSnapshot {
     case_id: asString(f.case_id),
     customer_id: asString(f.customer_id),
     sales_id: asString(f.sales_id) || undefined,
-    sales_name: asString(f.sales_name) || undefined,
+    sales_name: asString(f.sales_rep) || undefined,
     quotation_no: asString(f.quotation_no) || undefined,
     quotation_status: asString(f.quotation_status) || undefined,
     quotation_items_json: asString(f.quotation_items_json) || undefined,
@@ -84,7 +137,7 @@ function dealFromRecord(record: BaseRecord): DealSnapshot {
     vat_rate: typeof f.vat_rate === "number" ? f.vat_rate : undefined,
     vat_amount: typeof f.vat_amount === "number" ? f.vat_amount : undefined,
     shipping_fee: typeof f.shipping_fee === "number" ? f.shipping_fee : undefined,
-    total_amount: typeof f.total_amount === "number" ? f.total_amount : undefined,
+    total_amount: typeof f.total_amount === "number" ? f.total_amount : typeof f.deal_value_thb === "number" ? f.deal_value_thb : undefined,
     quotation_note: asString(f.quotation_note) || undefined,
     quotation_valid_until: asString(f.quotation_valid_until) || undefined,
     quotation_sent_at: typeof f.quotation_sent_at === "number" ? f.quotation_sent_at : undefined,
@@ -155,22 +208,28 @@ export class LarkBaseRepository {
     const table = this.env.LARK_BASE_CUSTOMERS_TABLE_ID;
     const existing = await this.findByField(table, "customer_id", snapshot.customer_id);
     const now = Date.now();
+    const incomingStage = incomingCustomerStage(snapshot.stage);
+    const customerStage = existing
+      ? preservedCustomerStage(asString(existing.fields.customer_stage, CUSTOMER_STAGE.NEW), incomingStage)
+      : incomingStage;
     const fields: UnknownRecord = {
       customer_id: snapshot.customer_id,
       line_user_id: snapshot.line_user_id,
       display_name: snapshot.display_name,
       picture_url: snapshot.picture_url ?? "",
-      stage: stageForBase(snapshot.stage),
-      vip_level: snapshot.vip_level ?? (existing ? asString(existing.fields.vip_level, "Standard") : "Standard"),
+      customer_stage: customerStage,
+      vip_status: snapshot.vip_status ?? (existing ? asString(existing.fields.vip_status, VIP_STATUS.STANDARD) : VIP_STATUS.STANDARD),
       assigned_sales_id: snapshot.assigned_sales_id ?? (existing ? asString(existing.fields.assigned_sales_id) : ""),
       assigned_sales_name: snapshot.assigned_sales_name ?? (existing ? asString(existing.fields.assigned_sales_name) : ""),
       ai_intent: snapshot.ai.intent,
+      ai_intent_label: intentLabel(snapshot.ai.intent),
       buyer_intent: snapshot.ai.buyer_intent,
+      lead_quality: leadQuality(snapshot.ai.lead_score),
       lead_score: snapshot.ai.lead_score,
       hot_lead: snapshot.ai.hot_lead,
       ai_summary: snapshot.ai.ai_summary,
+      ai_guidance: actionGuidance(snapshot.ai),
       last_message_at: snapshot.last_message_at,
-      lifetime_value: existing ? asNumber(existing.fields.lifetime_value, 0) : 0,
       created_at: existing ? asNumber(existing.fields.created_at, now) : now,
       updated_at: now,
     };
@@ -182,27 +241,57 @@ export class LarkBaseRepository {
     const table = this.env.LARK_BASE_CUSTOMERS_TABLE_ID;
     const existing = await this.findByField(table, "customer_id", customerId);
     if (!existing) return;
-    await this.update(table, existing.record_id, { assigned_sales_id: salesId, assigned_sales_name: salesName, updated_at: Date.now() });
+    const currentStage = asString(existing.fields.customer_stage, CUSTOMER_STAGE.NEW);
+    await this.update(table, existing.record_id, {
+      assigned_sales_id: salesId,
+      assigned_sales_name: salesName,
+      customer_stage: [CUSTOMER_STAGE.ACTIVE, CUSTOMER_STAGE.QUOTATION].includes(currentStage as typeof CUSTOMER_STAGE.ACTIVE | typeof CUSTOMER_STAGE.QUOTATION)
+        ? currentStage
+        : CUSTOMER_STAGE.CONTACTED,
+      updated_at: Date.now(),
+    });
   }
 
-  async markCustomerActive(customerId: string, lifetimeValue: number): Promise<void> {
+  async markCustomerQuotationSent(customerId: string): Promise<void> {
     const table = this.env.LARK_BASE_CUSTOMERS_TABLE_ID;
     const existing = await this.findByField(table, "customer_id", customerId);
     if (!existing) return;
-    await this.update(table, existing.record_id, { stage: "Active Customer", lifetime_value: lifetimeValue, updated_at: Date.now() });
+    const currentStage = asString(existing.fields.customer_stage, CUSTOMER_STAGE.NEW);
+    await this.update(table, existing.record_id, {
+      customer_stage: currentStage === CUSTOMER_STAGE.ACTIVE ? currentStage : CUSTOMER_STAGE.QUOTATION,
+      updated_at: Date.now(),
+    });
+  }
+
+  async markCustomerActive(customerId: string, totalSpendThb: number): Promise<void> {
+    const table = this.env.LARK_BASE_CUSTOMERS_TABLE_ID;
+    const existing = await this.findByField(table, "customer_id", customerId);
+    if (!existing) return;
+    const currentVip = asString(existing.fields.vip_status, VIP_STATUS.STANDARD);
+    await this.update(table, existing.record_id, {
+      customer_stage: CUSTOMER_STAGE.ACTIVE,
+      vip_status: vipStatusForSpend(totalSpendThb, currentVip, this.env.VIP_GOLD_MIN_THB, this.env.VIP_DIAMOND_MIN_THB),
+      updated_at: Date.now(),
+    });
   }
 
   async upsertCaseTracking(route: CaseRoute): Promise<string> {
     const table = this.env.LARK_BASE_CHAT_TRACKING_TABLE_ID;
     const trackingId = `case:${route.case_id}`;
     const existing = await this.findByField(table, "tracking_id", trackingId);
+    const sla = calculateSla(route);
     const fields: UnknownRecord = {
       tracking_id: trackingId,
       record_type: "CASE",
       case_id: route.case_id,
       customer_id: route.customer_id,
-      sales_id: route.owner_open_id ?? "",
-      sales_name: route.owner_name ?? "",
+      ...(route.customer_record_id ? { customer: [route.customer_record_id] } : {}),
+      customer_msg_time: route.opened_at,
+      sales_reply_time: route.first_response_at ?? null,
+      assigned_sales: route.owner_name ?? "",
+      assigned_sales_id: route.owner_open_id ?? "",
+      ai_intent: route.latest_intent ?? "",
+      channel: "🟢 LINE Official Account",
       lark_root_message_id: route.root_message_id ?? "",
       lark_thread_id: route.thread_id ?? "",
       case_status: route.status,
@@ -210,9 +299,10 @@ export class LarkBaseRepository {
       claimed_at: route.claimed_at ?? null,
       claim_seconds: route.claimed_at ? Math.max(0, Math.round((route.claimed_at - route.opened_at) / 1000)) : 0,
       first_response_at: route.first_response_at ?? null,
-      first_response_seconds: route.first_response_at ? Math.max(0, Math.round((route.first_response_at - route.opened_at) / 1000)) : 0,
+      first_response_seconds: sla.first_response_seconds ?? 0,
       closed_at: route.closed_at ?? null,
-      resolution_seconds: route.closed_at ? Math.max(0, Math.round((route.closed_at - route.opened_at) / 1000)) : 0,
+      resolution_seconds: sla.resolution_seconds ?? 0,
+      updated_at: Date.now(),
     };
     const saved = existing ? await this.update(table, existing.record_id, fields) : await this.create(table, fields);
     return saved.record_id;
@@ -222,18 +312,24 @@ export class LarkBaseRepository {
     const table = this.env.LARK_BASE_CHAT_TRACKING_TABLE_ID;
     const existing = await this.findByField(table, "tracking_id", input.tracking_id);
     if (existing) return;
+    const customer = await this.findByField(this.env.LARK_BASE_CUSTOMERS_TABLE_ID, "customer_id", input.customer_id);
     await this.create(table, {
       tracking_id: input.tracking_id,
       record_type: "MESSAGE",
       case_id: input.case_id,
       customer_id: input.customer_id,
-      sales_id: input.sales_id ?? "",
-      sales_name: input.sales_name ?? "",
+      ...(customer ? { customer: [customer.record_id] } : {}),
+      assigned_sales: input.sales_name ?? "",
+      assigned_sales_id: input.sales_id ?? "",
       direction: input.direction,
+      channel: "🟢 LINE Official Account",
       message_type: input.message_type,
       message_id: input.message_id,
       message_text: input.message_text,
+      customer_msg_time: input.direction === "customer_to_sales" ? input.event_at : null,
+      sales_reply_time: input.direction === "sales_to_customer" ? input.event_at : null,
       event_at: input.event_at,
+      updated_at: Date.now(),
     });
   }
 
@@ -245,8 +341,12 @@ export class LarkBaseRepository {
       deal_id: input.dealId,
       case_id: input.route.case_id,
       customer_id: input.route.customer_id,
+      ...(input.route.customer_record_id ? { customer: [input.route.customer_record_id] } : {}),
+      deal_value_thb: input.quote.total_amount,
       sales_id: input.route.owner_open_id ?? "",
-      sales_name: input.route.owner_name ?? "",
+      sales_rep: input.route.owner_name ?? "",
+      deal_status: existing ? asString(existing.fields.deal_status, "Open") : "Open",
+      pipeline_stage: "Quotation",
       quotation_no: input.quote.quotation_no,
       quotation_status: input.quotationStatus,
       quotation_items_json: JSON.stringify(input.quote.items),
@@ -261,7 +361,7 @@ export class LarkBaseRepository {
       quotation_sent_at: input.quotationStatus === "Sent" ? now : existing ? existing.fields.quotation_sent_at ?? null : null,
       payment_amount: existing ? asNumber(existing.fields.payment_amount, 0) : 0,
       payment_status: existing ? asString(existing.fields.payment_status, "Pending") : "Pending",
-      deal_status: existing ? asString(existing.fields.deal_status, "Open") : "Open",
+      closed_at: existing ? existing.fields.closed_at ?? null : null,
       created_at: existing ? asNumber(existing.fields.created_at, now) : now,
       updated_at: now,
     };
@@ -270,7 +370,12 @@ export class LarkBaseRepository {
   }
 
   async markQuoteSent(recordId: string): Promise<void> {
-    await this.update(this.env.LARK_BASE_SALES_DEALS_TABLE_ID, recordId, { quotation_status: "Sent", quotation_sent_at: Date.now(), updated_at: Date.now() });
+    await this.update(this.env.LARK_BASE_SALES_DEALS_TABLE_ID, recordId, {
+      quotation_status: "Sent",
+      quotation_sent_at: Date.now(),
+      pipeline_stage: "Quotation",
+      updated_at: Date.now(),
+    });
   }
 
   async getLatestDealForCase(caseId: string): Promise<{ recordId: string; deal: DealSnapshot } | null> {
@@ -284,6 +389,7 @@ export class LarkBaseRepository {
   async markQrState(recordId: string, amount: number, status: "Pending QR Send" | "QR Sent"): Promise<void> {
     const now = Date.now();
     await this.update(this.env.LARK_BASE_SALES_DEALS_TABLE_ID, recordId, {
+      deal_value_thb: amount,
       payment_amount: amount,
       payment_status: status,
       qr_sent_at: status === "QR Sent" ? now : null,
@@ -294,9 +400,11 @@ export class LarkBaseRepository {
   async closeDeal(recordId: string, amount: number): Promise<void> {
     const now = Date.now();
     await this.update(this.env.LARK_BASE_SALES_DEALS_TABLE_ID, recordId, {
+      deal_value_thb: amount,
       payment_amount: amount,
       payment_status: "Paid",
-      deal_status: "Closed Won",
+      deal_status: "Closed Won 🏆",
+      pipeline_stage: "Closed Won",
       closed_at: now,
       updated_at: now,
     });
@@ -304,9 +412,9 @@ export class LarkBaseRepository {
 
   async getSalesPerformance(salesId: string): Promise<SalesPerformance> {
     const all = await this.listAll(this.env.LARK_BASE_SALES_DEALS_TABLE_ID);
-    const won = all.filter((record) => asString(record.fields.sales_id) === salesId && asString(record.fields.deal_status) === "Closed Won");
+    const won = all.filter((record) => asString(record.fields.sales_id) === salesId && isClosedWon(record.fields.deal_status));
     return {
-      closed_won_amount: won.reduce((sum, record) => sum + asNumber(record.fields.payment_amount, asNumber(record.fields.total_amount, 0)), 0),
+      closed_won_amount: won.reduce((sum, record) => sum + asNumber(record.fields.deal_value_thb, asNumber(record.fields.payment_amount, asNumber(record.fields.total_amount, 0))), 0),
       closed_won_count: won.length,
     };
   }
@@ -314,8 +422,8 @@ export class LarkBaseRepository {
   async getCustomerLifetimeValue(customerId: string): Promise<number> {
     const all = await this.listAll(this.env.LARK_BASE_SALES_DEALS_TABLE_ID);
     return all
-      .filter((record) => asString(record.fields.customer_id) === customerId && asString(record.fields.deal_status) === "Closed Won")
-      .reduce((sum, record) => sum + asNumber(record.fields.payment_amount, asNumber(record.fields.total_amount, 0)), 0);
+      .filter((record) => asString(record.fields.customer_id) === customerId && isClosedWon(record.fields.deal_status))
+      .reduce((sum, record) => sum + asNumber(record.fields.deal_value_thb, asNumber(record.fields.payment_amount, asNumber(record.fields.total_amount, 0))), 0);
   }
 
   async listSegmentLineUsers(segment: "vip" | "retarget"): Promise<string[]> {
@@ -323,15 +431,14 @@ export class LarkBaseRepository {
     const users = all.filter((record) => {
       const f = record.fields;
       const line = asString(f.line_user_id).trim();
-      if (!line) return false;
+      if (!isValidLineUserId(line)) return false;
       if (segment === "vip") {
-        const vip = asString(f.vip_level).trim();
-        return Boolean(vip && vip.toLowerCase() !== "standard");
+        return [VIP_STATUS.GOLD, VIP_STATUS.DIAMOND].includes(asString(f.vip_status) as typeof VIP_STATUS.GOLD | typeof VIP_STATUS.DIAMOND);
       }
-      const stage = asString(f.stage);
+      const stage = asString(f.customer_stage);
       const buyer = asString(f.buyer_intent);
       const hot = asBoolean(f.hot_lead, false);
-      return hot || ["Interested", "Negotiating", "Closing"].includes(stage) || ["Purchase Intent", "Ready To Buy"].includes(buyer);
+      return stage === CUSTOMER_STAGE.QUOTATION || hot || ["Purchase Intent", "Ready To Buy"].includes(buyer);
     }).map((record) => asString(record.fields.line_user_id).trim());
     return Array.from(new Set(users));
   }
