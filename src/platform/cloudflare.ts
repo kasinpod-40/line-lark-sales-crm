@@ -56,3 +56,33 @@ export interface WorkerExecutionContext {
 export interface WorkersAI {
   run(model: string, input: unknown): Promise<unknown>;
 }
+
+export interface R2HTTPMetadata {
+  contentType?: string;
+  contentLanguage?: string;
+  contentDisposition?: string;
+  contentEncoding?: string;
+  cacheControl?: string;
+  cacheExpiry?: Date;
+}
+
+export interface R2ObjectBody {
+  key: string;
+  size: number;
+  httpEtag: string;
+  body: ReadableStream<Uint8Array>;
+  httpMetadata?: R2HTTPMetadata;
+  customMetadata?: Record<string, string>;
+  writeHttpMetadata(headers: Headers): void;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+export interface R2Bucket {
+  put(
+    key: string,
+    value: ReadableStream | ArrayBuffer | ArrayBufferView | string | Blob | null,
+    options?: { httpMetadata?: R2HTTPMetadata; customMetadata?: Record<string, string> },
+  ): Promise<unknown>;
+  get(key: string): Promise<R2ObjectBody | null>;
+  delete(key: string): Promise<void>;
+}
