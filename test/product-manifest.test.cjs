@@ -7,6 +7,12 @@ const manifest = JSON.parse(fs.readFileSync('deploy/product-manifest.json', 'utf
 test('product manifest locks reusable three-table contract and migration order', () => {
   assert.equal(manifest.release, '0.3.0');
   assert.deepEqual(manifest.business_tables, ['Customers', 'Chat_Tracking', 'Sales_Deals']);
+  assert.equal(manifest.base_schema_contract, 'docs/lark-base-schema.md');
+  assert.equal(manifest.base_machine_contract, 'deploy/lark-base-contract.json');
+  assert.equal(manifest.base_provisioner, 'scripts/provision-lark-base.mjs');
+  for (const file of [manifest.base_schema_contract, manifest.base_machine_contract, manifest.base_provisioner]) {
+    assert.equal(fs.existsSync(file), true, file);
+  }
   assert.deepEqual(manifest.d1_migrations, [
     'migrations/0001_operational_state.sql',
     'migrations/0002_srs_media_and_campaign_observability.sql',
