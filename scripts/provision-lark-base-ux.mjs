@@ -20,13 +20,17 @@ function parseArgs(argv) {
     else if (arg === "--base-token") args.baseToken = argv[++i] || "";
     else if (arg === "--identity") args.identity = argv[++i] || "";
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage:\n  npm run lark:base:ux:plan\n  npm run lark:base:ux:apply -- --base-token <existing_base_token>\n\nPlan mode performs zero Lark mutations. Apply mode reconciles views and dashboards only; it never creates/deletes business tables or fields.");
+      console.log("Usage:\n  npm run lark:base:ux:plan\n  npm run lark:base:ux:apply -- --base-token <existing_base_token>\n\nPlan mode performs zero Lark mutations. Apply mode reconciles View resources, filters/groups/sorts and dashboards only. visible_fields are intentionally delivered by the Base JS SDK UI runner because the current live server mutation path does not persist them reliably.");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (args.identity !== "user") throw new Error("Golden Base UX provisioning is locked to --identity user");
   if (args.apply && !args.baseToken.trim()) throw new Error("--base-token is required with --apply");
   return args;
+}
+
+function visibleFieldViewCount() {
+  return uxContract.tables.reduce((sum, table) => sum + table.views.filter((view) => Array.isArray(view.visible_fields)).length, 0);
 }
 
 function plan() {
@@ -44,6 +48,11 @@ function plan() {
     dashboard_count: uxContract.dashboards.length,
     dashboard_block_count: blockCount,
     prune_extra_views: uxContract.prune_extra_views === true,
+    visible_fields: {
+      delivery: "base_js_sdk_ui",
+      expected_views: visibleFieldViewCount(),
+      command: "npm run lark:base:ux:visible-ui",
+    },
     table_icons: uxContract.table_icons,
     table_icon_delivery: uxContract.table_icon_delivery,
   }, null, 2));
@@ -217,7 +226,6 @@ function renameView(baseToken, tableId, tableName, fromId, fromName, toName) {
 }
 
 const viewPropertyCommands = {
-  visible_fields: { get: "+view-get-visible-fields", set: "+view-set-visible-fields" },
   filter: { get: "+view-get-filter", set: "+view-set-filter" },
   group: { get: "+view-get-group", set: "+view-set-group" },
   sort: { get: "+view-get-sort", set: "+view-set-sort" },
@@ -225,7 +233,7 @@ const viewPropertyCommands = {
 
 function getViewProperty(baseToken, tableId, tableName, viewId, viewName, property) {
   const command = viewPropertyCommands[property]?.get;
-  if (!command) throw new Error(`Unsupported view property read: ${property}`);
+  if (!command) throw new Error(`Unsupported server-owned view property read: ${property}`);
   return runLark([
     "base", command,
     "--base-token", baseToken,
@@ -236,7 +244,7 @@ function getViewProperty(baseToken, tableId, tableName, viewId, viewName, proper
 
 function reconcileViewProperty(baseToken, tableId, tableName, viewId, viewName, property, desired, fieldIds) {
   const commands = viewPropertyCommands[property];
-  if (!commands) throw new Error(`Unsupported view property reconcile: ${property}`);
+  if (!commands) throw new Error(`Unsupported server-owned view property reconcile: ${property}`);
 
   const readbackDesired = readbackDesiredForViewProperty(property, desired, fieldIds);
   const mutationDesired = mutationDesiredForViewProperty(property, desired, fieldIds);
@@ -261,11 +269,7 @@ function mergePropertyStats(target, result) {
 }
 
 function setViewConfig(baseToken, tableId, tableName, viewId, view, fieldIds) {
-  const stats = { changed: 0, unchanged: 0, no_op_recovered: 0 };
-  if (view.visible_fields) {
-    const desired = { visible_fields: view.visible_fields };
-    mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "visible_fields", desired, fieldIds));
-  }
+  const stats = { changed: 0, unchanged: 0, no_op_recovered: 0, visible_fields_deferred: Array.isArray(view.visible_fields) ? 1 : 0 };
   if (view.filter) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "filter", view.filter, fieldIds));
   if (view.group) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "group", view.group, fieldIds));
   if (view.sort) mergePropertyStats(stats, reconcileViewProperty(baseToken, tableId, tableName, viewId, view.name, "sort", view.sort, fieldIds));
@@ -291,10 +295,6 @@ function verifyTableViewState(baseToken, tableId, tableContract, fieldIds) {
   const liveViews = listViews(baseToken, tableId, tableContract.name);
   for (const view of tableContract.views) {
     const viewId = requireResourceId(liveViews, view.name, `View ${tableContract.name}`);
-    if (view.visible_fields) {
-      const desired = { visible_fields: view.visible_fields };
-      reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "visible_fields", readbackDesiredForViewProperty("visible_fields", desired, fieldIds), fieldIds);
-    }
     if (view.filter) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "filter", view.filter, fieldIds);
     if (view.group) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "group", readbackDesiredForViewProperty("group", view.group, fieldIds), fieldIds);
     if (view.sort) reads += verifyViewPropertyEventually(baseToken, tableId, tableContract.name, viewId, view.name, "sort", readbackDesiredForViewProperty("sort", view.sort, fieldIds), fieldIds);
@@ -312,7 +312,7 @@ function reconcileViews(baseToken, tables) {
   let renamed = 0;
   let deleted = 0;
   let verificationReads = 0;
-  const properties = { changed: 0, unchanged: 0, no_op_recovered: 0 };
+  const properties = { changed: 0, unchanged: 0, no_op_recovered: 0, visible_fields_deferred: 0 };
 
   for (const tableContract of uxContract.tables) {
     const tableId = requireResourceId(tables, tableContract.name, "Table");
@@ -343,6 +343,7 @@ function reconcileViews(baseToken, tables) {
       properties.changed += result.changed;
       properties.unchanged += result.unchanged;
       properties.no_op_recovered += result.no_op_recovered;
+      properties.visible_fields_deferred += result.visible_fields_deferred;
     }
 
     if (uxContract.prune_extra_views === true) {
@@ -447,13 +448,20 @@ function apply(args) {
     product_release: uxContract.product_release,
     base_token: baseToken,
     views: { expected: finalViewCount, ...views },
+    visible_fields: {
+      status: "BASE_JS_SDK_UI_REQUIRED",
+      expected_views: visibleFieldViewCount(),
+      server_mutation_count: 0,
+      command: "npm run lark:base:ux:visible-ui",
+      reason: "Live golden Base proved +view-set-visible-fields may return without persisting the requested subset; visible field membership/order is therefore owned by the in-Base JS SDK runner.",
+    },
     dashboards: { expected: uxContract.dashboards.length, blocks_expected: finalBlockCount, ...dashboards },
     table_icons: {
       status: "MANUAL_UI_PASS_REQUIRED",
       assignments: uxContract.table_icons,
       reason: uxContract.table_icon_delivery.reason,
     },
-    next: "Apply the three sidebar table icons in Lark UI, then visually inspect the 22 curated views and two dashboards before runtime E2E.",
+    next: "Run npm run lark:base:ux:visible-ui and apply visible fields inside this Base. After that returns ok=true, apply the three sidebar table icons and visually inspect the 22 curated views and two dashboards before runtime E2E.",
   }, null, 2));
 }
 
