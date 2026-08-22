@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX APPLY IN PROGRESS / CURRENT LIVE LARK VIEW READBACK COMPATIBILITY FIXES VERIFIED / NEXT STEP IS RESUME UX APPLY ON THE SAME BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -77,31 +77,35 @@ npm run lark:base:ux:apply -- --base-token <existing_base_token>
 
 The UX apply is resume-safe and never recreates the Base or business tables.
 
-## Live Lark compatibility incidents — all fixed in code so far
+## Live Lark compatibility incidents — fixed in code so far
 
 ### 1. persisted-state no-op
-Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are treated as recoverable and verified through readback instead of fatal errors.
+Lark can return `no operation produced` when a requested mutation already matches persisted state. Known no-op responses are recoverable instead of fatal.
 
 ### 2. nested Select option misclassified as a Field
-A generic recursive parser incorrectly promoted Select options such as `🔥 Hot Lead` into field resources. Resource parsing now reads only the official top-level list collections (`tables[]`, `fields[]`, `views[]`, dashboard/block `items[]`) and field-ID lookup iterates only schema-contract fields.
+A generic recursive parser incorrectly promoted Select options such as `🔥 Hot Lead` into field resources. Resource parsing now reads only the official list collections and field lookup iterates only schema-contract fields.
 
 ### 3. asynchronous read visibility
-Lark Base writes can become visible asynchronously. The runner no longer assumes immediate read-after-write consistency. Final acceptance uses bounded eventual-consistency polling/backoff. View create/rename/delete and Dashboard/Block visibility use the same pattern.
+Lark Base writes can become visible asynchronously. The runner no longer assumes immediate read-after-write consistency. Final acceptance uses bounded eventual-consistency polling/backoff, including View and Dashboard resource visibility.
 
-### 4. `visible_fields` readback identity — latest live evidence
-Live target output proved current `+view-get-visible-fields` returns canonical **field names**, e.g.:
+### 4. `visible_fields` readback identity
+Live target output proved `+view-get-visible-fields` returns canonical field **names**, not `fld...` IDs. The runner now keeps the expected visible-field state in canonical name form.
+
+### 5. `group` readback identity — latest live evidence
+The next live resume proved `+view-get-group` also resolves persisted field references back to canonical field **names**:
 
 ```json
-{"data":{"visible_fields":["customer_id","display_name","customer_stage","lead_quality"]}}
+{"data":{"group":[{"desc":false,"field":"customer_stage"}]}}
 ```
 
-The runner had incorrectly converted the expected `visible_fields` names to `fld...` IDs, causing a false final mismatch even though the actual persisted state already matched the requested configuration.
+The runner was still expecting `fld...` IDs for group/sort, so the persisted state was correct but final verification falsely failed.
 
 Fix verified:
-- `visible_fields` readback expectation now stays in canonical field-name form
-- group/sort continue using field-ID normalization where current readback requires it
-- regression test uses the exact live-shaped `data.visible_fields` name response
-- array order remains significant
+- canonical readback expectation now keeps **field names** for `visible_fields`, `group`, and `sort`
+- wrapper-name differences remain tolerated (`group` vs `group_config`, `sort` vs `sort_config`)
+- exact array order and `desc` semantics remain enforced
+- helper can canonicalize alternate/legacy `fld...` references back to contract field names when a field-ID map is supplied
+- regression tests include the exact live-shaped `data.group` response from the golden Base
 
 These incidents are provisioner compatibility defects, not Base corruption and not user setup errors.
 
@@ -115,8 +119,6 @@ Future command blocks must either:
 - omit `set -e` entirely, or
 - use a disposable subshell `( set -euo pipefail; ... )` so only the subshell exits and the interactive Terminal remains usable.
 
-`[Process completed]` is therefore not a Lark/npm error; in our prior blocks it was triggered by the shell being allowed to exit after the failing command.
-
 ## Table icons
 
 Locked sidebar assignments:
@@ -129,15 +131,15 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 ## Latest verification checkpoint
 
 Latest code-bearing verified SHA:
-`8982002aff9bb160860442118bf7a6821e9ab6d5`
+`986f292980bed88eca61736e99012b2390f4b5cf`
 
 GitHub CI:
-- run `32563902361` / run #152
-- job `97009571284`
+- run `32564220502` / run #155
+- job `97010366465`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **61/61 PASS**
+- unit/contract tests: **63/63 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
@@ -167,7 +169,7 @@ Phase C customer sale:
 
 ## Next work
 
-1. Pull current branch head containing verified code SHA `8982002aff9bb160860442118bf7a6821e9ab6d5`.
+1. Pull current branch head containing verified code SHA `986f292980bed88eca61736e99012b2390f4b5cf` or a later docs-only commit containing it.
 2. Resume `npm run lark:base:ux:apply -- --base-token <existing_base_token>` against the same golden Base.
 3. Verify all 22 curated Views and both Dashboards with no leftover default/localized Views.
 4. Apply the three locked table icons manually in Lark UI.
