@@ -1,0 +1,68 @@
+{
+  "product": "line-lark-sales-crm",
+  "release": "0.3.0",
+  "deployment_model": "one_golden_stack_plus_repeatable_customer_installations",
+  "business_tables": [
+    "Customers",
+    "Chat_Tracking",
+    "Sales_Deals"
+  ],
+  "base_schema_contract": "docs/lark-base-schema.md",
+  "d1_migrations": [
+    "migrations/0001_operational_state.sql",
+    "migrations/0002_srs_media_and_campaign_observability.sql"
+  ],
+  "cloudflare_bindings": {
+    "d1": "DB",
+    "r2": "MEDIA_BUCKET",
+    "queue_producer": "LINE_EVENTS_QUEUE",
+    "workers_ai_optional": "AI"
+  },
+  "required_secrets": [
+    "LINE_CHANNEL_SECRET",
+    "LINE_CHANNEL_ACCESS_TOKEN",
+    "LARK_APP_ID",
+    "LARK_APP_SECRET",
+    "LARK_VERIFICATION_TOKEN",
+    "PROMPTPAY_TARGET"
+  ],
+  "optional_secrets": [
+    "LARK_ENCRYPT_KEY"
+  ],
+  "required_vars": [
+    "LARK_SALES_INBOX_CHAT_ID",
+    "LARK_BASE_APP_TOKEN",
+    "LARK_BASE_CUSTOMERS_TABLE_ID",
+    "LARK_BASE_CHAT_TRACKING_TABLE_ID",
+    "LARK_BASE_SALES_DEALS_TABLE_ID",
+    "PUBLIC_BASE_URL"
+  ],
+  "optional_vars": [
+    "PROMPTPAY_TARGET_TYPE",
+    "COMPANY_NAME",
+    "QUOTE_DEFAULT_VAT_RATE",
+    "QR_TTL_SECONDS",
+    "MEDIA_TTL_SECONDS",
+    "VIP_GOLD_MIN_THB",
+    "VIP_DIAMOND_MIN_THB",
+    "AI_TEXT_MODEL",
+    "AI_VISION_MODEL"
+  ],
+  "callbacks": {
+    "line_webhook": "/webhooks/line",
+    "lark_callback": "/webhooks/lark",
+    "health": "/health"
+  },
+  "acceptance": {
+    "checklist": "docs/setup.md",
+    "delivery_model": "docs/single-stack-delivery.md",
+    "customer_installation_model": "docs/customer-deployment-model.md"
+  },
+  "rules": {
+    "field_naming": "lower_snake_case",
+    "customer_specific_code_forks": false,
+    "secrets_in_source": false,
+    "financial_actions_require_confirmation": true,
+    "runtime_live_ready_requires_controlled_e2e": true
+  }
+}
