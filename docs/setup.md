@@ -2,9 +2,12 @@
 
 This project has **one real integration stack only**. There is no DEV/UAT/STAGING/PROD ladder.
 
-Local work and GitHub CI are verification gates. The resources below are created once as the final customer-facing target, the controlled E2E runs directly on that same target, and the same resources are retained for operation after acceptance.
+Local work and GitHub CI are verification gates. The resources below are created once as the final target, the controlled E2E runs directly on that same target, and the same resources are retained for operation after acceptance.
 
-Read `docs/single-stack-delivery.md` first.
+Read these first:
+- `docs/single-stack-delivery.md`
+- `docs/customer-deployment-model.md`
+- `deploy/product-manifest.json`
 
 Requirements authority:
 1. PM 5-function summary = latest executive/acceptance summary.
@@ -14,10 +17,11 @@ Requirements authority:
 ## 0. Pre-flight before creating external resources
 
 - exact code-bearing HEAD must have successful GitHub CI
+- select one verified product release/SHA and matching `deploy/product-manifest.json`
 - do not create a second Base/Worker for testing
 - decide final names/IDs once
 - prepare final secrets and PromptPay target
-- keep LINE webhook and Lark event delivery disabled/disconnected until the final target is fully configured and ready for controlled E2E
+- keep LINE webhook and Lark event delivery disabled/disconnected until the final target is fully configured and `/health` is ready
 
 ## 1. Final Lark Base — create once
 
@@ -42,7 +46,7 @@ Important relation/formula setup:
 - SLA formulas/fields per final schema
 - Closed Won value + `total_spend_thb` rollup per final schema
 
-This Base is the same Base used for controlled E2E and continued live operation. Do not clone/promote data into another Base afterward.
+This Base is the same Base used for controlled E2E and continued operation. Do not clone/promote data into another Base afterward.
 
 ## 2. Final Lark App / Bot
 
@@ -82,7 +86,7 @@ Configure:
 
 The Worker validates `x-line-signature` before Queue mutation.
 
-Do not enable the webhook until Worker, D1, R2, Queue, Lark App and Base IDs are configured and `/health` is ready for the controlled E2E.
+Do not enable the webhook until Worker, D1, R2, Queue, Lark App and Base IDs are configured and `/health` is HTTP 200.
 
 Supported bridge behavior:
 
@@ -105,15 +109,15 @@ These fallback mappings are intentional platform-compatibility behavior, not sil
 
 ## 4. Final Cloudflare resources — create once
 
-Provision:
+Provision the resources listed by `deploy/product-manifest.json`:
 - Worker
 - D1 database
-- R2 bucket `line-lark-sales-crm-media`
-- Queue `line-lark-sales-crm-events`
-- DLQ `line-lark-sales-crm-events-dlq`
+- R2 bucket
+- Queue
+- DLQ
 - Workers AI binding `AI` if AI inference is desired
 
-Apply D1 migrations **once and in order** before traffic:
+Apply D1 migrations **once and exactly in manifest order**:
 1. `migrations/0001_operational_state.sql`
 2. `migrations/0002_srs_media_and_campaign_observability.sql`
 
@@ -134,33 +138,41 @@ Configure PromptPay target type:
 - PromptPay QR: `/assets/qr/<token>.png`
 - bridge media: `/assets/media/<token>`
 
+The readiness validator rejects an invalid PromptPay target/type pair before E2E.
+
 ## 6. Final Worker configuration
 
-Secrets:
+Use `deploy/product-manifest.json` as the canonical list of required/optional values.
+
+Required secrets include:
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `LARK_APP_ID`
 - `LARK_APP_SECRET`
 - `LARK_VERIFICATION_TOKEN`
-- `LARK_ENCRYPT_KEY` only if callback encryption is enabled
 - `PROMPTPAY_TARGET`
 
-Vars:
+Optional secret:
+- `LARK_ENCRYPT_KEY` only if callback encryption is enabled
+
+Required vars include:
 - `LARK_SALES_INBOX_CHAT_ID`
 - `LARK_BASE_APP_TOKEN`
 - `LARK_BASE_CUSTOMERS_TABLE_ID`
 - `LARK_BASE_CHAT_TRACKING_TABLE_ID`
 - `LARK_BASE_SALES_DEALS_TABLE_ID`
-- `PROMPTPAY_TARGET_TYPE`
 - `PUBLIC_BASE_URL`
+
+Optional/default vars:
+- `PROMPTPAY_TARGET_TYPE`
 - `COMPANY_NAME`
 - `QUOTE_DEFAULT_VAT_RATE` default `7`
 - `QR_TTL_SECONDS` default `604800`
 - `MEDIA_TTL_SECONDS` default `604800`
-- `VIP_GOLD_MIN_THB` — customer/business threshold; leave blank if not decided
-- `VIP_DIAMOND_MIN_THB` — customer/business threshold; leave blank if not decided
-- optional `AI_TEXT_MODEL`
-- optional `AI_VISION_MODEL`
+- `VIP_GOLD_MIN_THB` — business threshold; leave blank if not decided
+- `VIP_DIAMOND_MIN_THB` — business threshold; leave blank if not decided
+- `AI_TEXT_MODEL`
+- `AI_VISION_MODEL`
 
 Bindings:
 - `DB` = D1
@@ -170,13 +182,34 @@ Bindings:
 
 Use `wrangler.jsonc.example` as template. Do not commit real secrets.
 
-## 7. Enable traffic only when ready
+## 7. Deployment readiness gate
 
-After Base/resource/config readiness is complete:
-1. verify `/health`
-2. configure/enable Lark callback/event delivery
-3. configure/enable LINE webhook
-4. immediately run the controlled E2E below
+Before enabling external callbacks, call:
+
+`GET https://<worker-host>/health`
+
+Expected ready state:
+- HTTP `200`
+- `ok: true`
+- `configuration.ready: true`
+- required readiness checks true
+
+Blocking configuration produces HTTP `503` with safe `code`, `key`, and `message` fields. The endpoint does **not** return secret values.
+
+The validator blocks common installation mistakes including:
+- missing required secrets/vars/bindings
+- obvious example/placeholder Lark/Base/public URL values
+- non-HTTPS or malformed `PUBLIC_BASE_URL`
+- PromptPay target/type mismatch
+- invalid VAT/TTL values
+- invalid/reversed VIP thresholds
+
+Workers AI and VIP thresholds may intentionally be absent; those appear as warnings because deterministic AI fallback / VIP-preserve behavior exists.
+
+After `/health` is ready:
+1. configure/enable Lark callback/event delivery
+2. configure/enable LINE webhook
+3. immediately run the controlled E2E below
 
 There is no later environment promotion step.
 
@@ -184,7 +217,7 @@ There is no later environment promotion step.
 
 Run in this order so each failure has a narrow root cause:
 
-1. `/health` shows LINE, Lark, Base, PromptPay and media configured.
+1. `/health` is HTTP 200 with `configuration.ready=true`.
 2. LINE text → one blue root Case Card + Thread message.
 3. Burst several first messages from one LINE user → still exactly one active Case/root Card.
 4. Two Sales attempt Claim → one atomic winner; same Card turns green.
@@ -214,4 +247,4 @@ Do not create a DEV/UAT clone and do not rebuild the Base from scratch.
 - rerun the affected flow on this same final stack
 - preserve successful state unless rollback is actually required
 
-When all controlled E2E steps pass, this same stack becomes `live-ready` and remains the operating system.
+When all controlled E2E steps pass, this same stack becomes `live-ready` and `reusable-ready` and remains the operating/reference system.
