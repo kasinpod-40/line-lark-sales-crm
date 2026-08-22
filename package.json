@@ -10,6 +10,8 @@
     "check": "npm run typecheck && npm test && npm run bundle",
     "lark:base:plan": "node scripts/provision-lark-base.mjs",
     "lark:base:apply": "node scripts/provision-lark-base.mjs --apply",
+    "lark:base:ux:plan": "node scripts/provision-lark-base-ux.mjs",
+    "lark:base:ux:apply": "node scripts/provision-lark-base-ux.mjs --apply",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "cf-types": "wrangler types"
