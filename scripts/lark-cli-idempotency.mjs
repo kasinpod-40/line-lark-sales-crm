@@ -39,6 +39,12 @@ function fieldIdToNameMap(fieldIdsByName) {
   return reverse;
 }
 
+function resolveFieldId(fieldIdsByName, fieldName) {
+  const id = fieldIdsByName?.[fieldName];
+  if (typeof id !== "string" || !id.trim()) throw new Error(`Missing Lark field id for ${fieldName}`);
+  return id.trim();
+}
+
 export function canonicalizeViewFieldReferences(value, fieldIdsByName = {}) {
   const reverse = fieldIdToNameMap(fieldIdsByName);
 
@@ -68,11 +74,36 @@ export function viewPropertyMatches(payload, expected, fieldIdsByName = {}) {
   return false;
 }
 
+export function mutationDesiredForViewProperty(property, desired, fieldIdsByName = {}) {
+  if (property === "visible_fields") {
+    return {
+      visible_fields: (desired.visible_fields || []).map((fieldName) => resolveFieldId(fieldIdsByName, fieldName)),
+    };
+  }
+  if (property === "group") {
+    return {
+      group_config: (desired.group_config || []).map((item) => ({
+        ...item,
+        field: resolveFieldId(fieldIdsByName, item.field),
+      })),
+    };
+  }
+  if (property === "sort") {
+    return {
+      sort_config: (desired.sort_config || []).map((item) => ({
+        ...item,
+        field: resolveFieldId(fieldIdsByName, item.field),
+      })),
+    };
+  }
+  return desired;
+}
+
 export function readbackDesiredForViewProperty(property, desired) {
-  // Current Lark CLI accepts canonical field names on writes and live readback can
-  // return those names for visible_fields/group/sort. Keep the expected contract
-  // in name form. viewPropertyMatches canonicalizes any fld... IDs returned by an
-  // alternate/older response shape back to these same names before comparison.
+  // Live Lark CLI readback resolves view field references to canonical field names,
+  // while current official mutation tests use concrete fld... IDs for visible/group/sort.
+  // Keep readback expectations in stable contract-name form and build a separate
+  // mutation payload with mutationDesiredForViewProperty().
   if (property === "visible_fields") {
     return {
       visible_fields: [...(desired.visible_fields || [])],
