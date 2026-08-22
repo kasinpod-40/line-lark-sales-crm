@@ -1,20 +1,32 @@
 import type { Env } from "../config/env";
-import type { QueueBatchLike, LineEventQueueMessage } from "./line-event.types";
+import type { CrmQueueMessage, QueueBatchLike } from "./line-event.types";
 import { CaseService } from "../services/case.service";
+import { CampaignDispatchService } from "../services/campaign-dispatch.service";
 
-export async function handleLineQueueBatch(batch: QueueBatchLike<LineEventQueueMessage>, env: Env): Promise<void> {
-  const service = new CaseService(env);
+export async function handleLineQueueBatch(batch: QueueBatchLike<CrmQueueMessage>, env: Env): Promise<void> {
+  const cases = new CaseService(env);
+  const campaigns = new CampaignDispatchService(env);
   for (const message of batch.messages) {
     try {
-      if (!message.body || message.body.schema_version !== 1 || message.body.channel !== "LINE") {
-        console.warn("LINE_QUEUE_INVALID_MESSAGE", message.id);
+      const body = message.body;
+      if (!body || body.schema_version !== 1) {
+        console.warn("CRM_QUEUE_INVALID_MESSAGE", message.id);
         message.ack();
         continue;
       }
-      await service.processLineEvent(message.body);
+
+      if (body.channel === "LINE") {
+        await cases.processLineEvent(body);
+      } else if (body.channel === "CRM" && body.job_type === "campaign_dispatch") {
+        await campaigns.dispatch(body.draft_id, body.case_id);
+      } else {
+        console.warn("CRM_QUEUE_UNSUPPORTED_MESSAGE", message.id);
+        message.ack();
+        continue;
+      }
       message.ack();
     } catch (error) {
-      console.error("LINE_QUEUE_PROCESS_FAILED", message.id, error instanceof Error ? error.message : String(error));
+      console.error("CRM_QUEUE_PROCESS_FAILED", message.id, error instanceof Error ? error.message : String(error));
       message.retry({ delaySeconds: Math.min(300, Math.max(5, 2 ** Math.min(message.attempts, 8))) });
     }
   }
