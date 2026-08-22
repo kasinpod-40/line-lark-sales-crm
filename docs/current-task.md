@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / 0 BUSINESS-DATA MUTATIONS / NEXT STEP IS FINAL VISUAL CHECK (OPTIONAL TABLE ICON PASS) THEN OWNER APP/BOT/CLOUDFLARE READINESS AND CONTROLLED E2E.**
+**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX LANE A COMPLETE / PREMIUM UX LANE B VISIBILITY MEMBERSHIP COMPLETE 22/22 / 7 VIEW ORDERS EXACT + 15 ORDER-ONLY DRIFTS ACCEPTED AS NON-BLOCKING / 0 BUSINESS-DATA MUTATIONS / CLOUDFLARE READINESS PRE-FLIGHT STARTED / LOCAL INSTALL-SPECIFIC `wrangler.jsonc` NOW GIT-IGNORED / NEXT STEP IS READ-ONLY CLOUDFLARE RESOURCE INVENTORY + OWNER LARK APP/BOT/SALES INBOX CONFIGURATION, THEN BIND EXISTING STACK AND REQUIRE `/health` READY BEFORE CALLBACKS.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
 
@@ -128,6 +128,19 @@ The canonical contract remains:
 
 Do not prefix canonical table names with emoji. Sidebar table icons are optional presentation-only UI polish and are not a runtime blocker.
 
+## Cloudflare readiness pre-flight — active
+
+Fresh Cloudflare documentation was rechecked before changing installation/config handling. Current Wrangler docs confirm:
+- `wrangler d1 list` enumerates remote D1 databases and supports JSON output
+- `wrangler r2 bucket list` enumerates R2 buckets
+- `wrangler queues list` enumerates Queues
+- D1/R2/Queue bindings are declared in the Wrangler configuration
+- plain vars belong in Wrangler config while secrets remain encrypted Worker secrets
+
+A concrete repository safety gap was fixed before asking the owner to bind installation-specific IDs: local `wrangler.jsonc` is now ignored by Git so personal Base/resource IDs are not accidentally committed. The canonical reusable template remains `wrangler.jsonc.example`.
+
+No Cloudflare resource has been created/deleted/changed by this pre-flight. External callbacks remain disabled until `/health` is HTTP 200 with `configuration.ready=true`.
+
 ## Live filter readback arity normalization
 
 During Lane A, `Chat_Tracking.🟢 SLA Fast` reached a semantically correct persisted filter but final verification rejected it because Lark read back unary `non_empty` as:
@@ -157,19 +170,19 @@ Current supported Lark Base v3 table update / official CLI do not expose a sideb
 
 ## Latest verification checkpoint
 
-Latest code-bearing verified SHA:
-`d3b0e81721927822446d27709c27fdecd3ed34f8`
+Latest code/config-bearing verified SHA:
+`a2f652565548b164c8c17496e3b2471c93426921`
 
 GitHub CI:
-- run `32569627647` / run #183
-- job `97023147077`
+- run `32570641153` / run #187
+- job `97025500916`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
 - unit/contract tests: **72/72 PASS**
 - Wrangler `4.125.0` deploy dry-run: **PASS**
 
-No source/config/test/migration change was needed for the Lane B runtime pass or this acceptance decision; these are documentation/runtime-state updates only.
+The only config-bearing change in this checkpoint is repository safety: local `wrangler.jsonc` is git-ignored. Product behavior and runtime Base state are unchanged.
 
 Any future source/config/test/migration change requires exact updated-head CI again before runtime mutation. Documentation-only commits may reference the verified code SHA above.
 
@@ -199,13 +212,15 @@ Phase C customer sale:
 ## Next work
 
 1. Stop the local `lark:base:ux:visible-ui` server; the visibility membership lane is complete and should not be rerun.
-2. Do a quick visual inspection of all 22 curated Views and both Dashboards; column-order differences are accepted and non-blocking.
-3. Optionally apply the preferred three sidebar table icons in Lark UI if the UI exposes a true icon control; preserve canonical table names exactly.
-4. Configure the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
-5. Read fresh Cloudflare docs before any Cloudflare source/config change, then bind the existing Worker/D1/R2/Queue/DLQ installation-specific vars/secrets.
-6. Require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
-7. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
-8. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
+2. Skip manual column reordering; accepted as non-blocking. Optional visual/icon polish must not block runtime readiness.
+3. Run a read-only Cloudflare inventory on the owner's existing account (`whoami`, D1 list, R2 bucket list, Queues list) and reuse existing resources where appropriate; do not create duplicates blindly.
+4. Configure/verify the owner-controlled Internal App/Bot and central `LINE Sales Inbox`; keep Events/Callbacks disabled until Cloudflare configuration is complete.
+5. Create the local, untracked `wrangler.jsonc` from `wrangler.jsonc.example`, bind the existing D1/R2/Queue/DLQ/optional AI resources, and set installation vars including the existing golden Base IDs.
+6. Put the six required secrets with Wrangler without committing their values; add `LARK_ENCRYPT_KEY` only if callback encryption is enabled.
+7. Apply D1 migrations in manifest order only after the exact target DB is confirmed.
+8. Deploy the Worker and require `/health` HTTP 200 with `configuration.ready=true` before enabling external callbacks.
+9. Enable required LINE/Lark callbacks and run the locked controlled E2E matrix.
+10. Do not mark `live-ready` / `reusable-ready` until controlled runtime evidence exists.
 
 ## Handoff read order
 
