@@ -4,7 +4,7 @@ Last updated: 2026-08-22 (ICT)
 
 ## Current Status
 
-**PRODUCT CODE-COMPLETE FOR PM 5 FUNCTIONS + SUPPORTING SRS / REUSABLE RELEASE 0.3.0 / LARK BASE AUTH-PREFLIGHT COMPATIBILITY FIX VERIFIED / NEXT STEP IS RESUME PERSONAL GOLDEN-STACK APPLY.**
+**PRODUCT CODE-COMPLETE FOR PM 5 FUNCTIONS + SUPPORTING SRS / REUSABLE RELEASE 0.3.0 / LARK BASE RESUME CURRENT-ID SHAPE FIX VERIFIED / NEXT STEP IS RESUME THE EXISTING PERSONAL GOLDEN BASE.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local work and GitHub CI are verification gates only.
 
@@ -28,18 +28,21 @@ Detailed SRS remains the supporting specification for collaboration, Thread isol
 Product release: `0.3.0`
 
 Last code-bearing verified SHA:
-`27c1bdb42c758abb8fe735be56a824e1ba4cb7c1`
+`74b48331dc47d0e625effc4c9837fc6efa6689c8`
 
 GitHub CI:
-- run `32556650198` / run #123
-- job `96991808653`
+- run `32559186156` / run #126
+- job `96998033433`
 - result: **SUCCESS**
 - dependency audit: **0 vulnerabilities**
 - TypeScript strict typecheck: **PASS**
-- unit/contract tests: **44/44 PASS**
-- Wrangler deploy dry-run bundle: **PASS**
+- unit/contract tests: **45/45 PASS**
+- Wrangler `4.125.0` deploy dry-run bundle: **PASS**
 
-The additional provisioner tests cover the current official `lark-cli auth status --json --verify` JSON shape and enforce that unverified user identity stops before Base mutation.
+The provisioner regression coverage now includes:
+- current official `lark-cli auth status --json --verify` status shape
+- unverified user refusal before Base mutation
+- current Base v3 table/field objects that expose their resource identifier as `id`
 
 Any future source/config/test/migration change requires exact code HEAD CI again before runtime changes.
 
@@ -76,7 +79,7 @@ Create the personal golden Base after Lark CLI user auth is ready:
 npm run lark:base:apply
 ```
 
-Resume a partially created Base without deleting successful state:
+Resume a manually created or partially provisioned Base without deleting successful state:
 
 ```bash
 npm run lark:base:apply -- --base-token <base_token>
@@ -86,6 +89,7 @@ Provisioner behavior:
 - uses explicit Lark **user** identity
 - validates current official auth status using `identity=user` and `verified=true`; auth status itself is not a shortcut success envelope and does not require `ok=true`
 - keeps `ok=true` mandatory for actual Lark Base shortcut mutations/reads handled by the provisioner
+- accepts both legacy `table_id` / `field_id` and current Base v3 `id` identifiers from Lark CLI responses
 - creates/reconciles only `Customers`, `Chat_Tracking`, `Sales_Deals`
 - first field is the required primary field for each table
 - creates bidirectional customer links/backlinks
@@ -96,7 +100,7 @@ Provisioner behavior:
 - outputs `LARK_BASE_APP_TOKEN` and the three table IDs for the existing Cloudflare Worker configuration
 - does not create/delete a fourth business table and does not auto-rollback by destructive Base recreation
 
-### Real Lark CLI integration incident — CLOSED IN CODE
+### Real Lark CLI integration incident 1 — CLOSED IN CODE
 
 First personal golden Base apply reached the user-auth preflight and stopped with:
 
@@ -114,6 +118,22 @@ Fix at `27c1bdb42c758abb8fe735be56a824e1ba4cb7c1`:
 - requires `verified=true`
 - preserves `ok=true` enforcement for Base shortcut commands
 - regression tests cover both verified-current-status acceptance and unverified-user refusal before Base mutation
+
+### Real Lark CLI integration incident 2 — CLOSED IN CODE
+
+The owner manually created the final personal Base shell and an existing `Customers` table. Resume then stopped with a duplicate-name refusal for `Customers`.
+
+Root cause:
+- current Lark Base v3 / current official Lark CLI table and field objects expose their identifier as `id`
+- the provisioner parser only recognized `table_id` and `field_id`
+- therefore the existing `Customers` table was invisible to reconciliation and the provisioner attempted a duplicate create
+- Lark rejected the duplicate before any duplicate table was created
+
+Fix at `74b48331dc47d0e625effc4c9837fc6efa6689c8`:
+- table discovery accepts `table_id` or current `id`
+- field discovery accepts `field_id` or current `id`
+- resume regression proves an existing `Customers` + `customer_id` using current `id` is recognized and the next create target is `Chat_Tracking`, not `Customers`
+- exact code HEAD CI run #126 passed 45/45 tests and Wrangler dry-run
 
 ## Private prebuild → PM presentation handoff — LOCKED
 
@@ -173,16 +193,16 @@ A sold customer receives the same verified product blueprint. Customer-specific 
 
 ## Next work — do not add more feature code first
 
-1. On the owner's Mac, pull exact code-bearing verified SHA `27c1bdb42c758abb8fe735be56a824e1ba4cb7c1` (or later docs-only head containing it).
-2. Verify official `lark-cli` user authentication is valid with `lark-cli auth status --json --verify`; effective `identity` must be `user` and `verified` must be `true`.
-3. Rerun `npm run lark:base:apply`; the previous failed attempt stopped before any Base mutation, so no resume token is required from that failure.
-4. Capture the returned Base app token + three table IDs.
-5. Create/configure the owner-controlled Lark App/Bot and Sales Inbox.
-6. Keep using the existing owner Cloudflare account/resources; apply D1 migrations in manifest order and configure Lark/LINE/PromptPay values.
-7. Require `/health` HTTP 200 with `configuration.ready=true`.
-8. Enable callbacks/webhook only after readiness is green.
-9. Run the full controlled E2E in `docs/setup.md`.
-10. Fix only real integration mismatches and rerun affected flows.
+1. On the owner's Mac, pull exact verified code SHA `74b48331dc47d0e625effc4c9837fc6efa6689c8` or the later docs-only head containing it.
+2. Resume the **existing manually created personal Base** with `npm run lark:base:apply -- --base-token <existing_base_token>`; do not create another Base.
+3. Reconcile `Customers`, then create `Chat_Tracking` and `Sales_Deals`, links/backlinks and deferred formulas.
+4. Capture the final three table IDs for Worker configuration.
+5. Create the required operational Views and Dashboard; apply meaningful icons in the Lark UI pass rather than changing canonical table names.
+6. Keep the owner-controlled CRM App/Bot; Events/Callbacks remain disabled until the Worker readiness gate is green.
+7. Keep using the existing owner Cloudflare account/resources; apply D1 migrations in manifest order and configure Lark/LINE/PromptPay values.
+8. Require `/health` HTTP 200 with `configuration.ready=true`.
+9. Enable callbacks/webhook only after readiness is green.
+10. Run the full controlled E2E in `docs/setup.md` and fix only real integration mismatches.
 
 ## Handoff read order
 
