@@ -33,6 +33,16 @@ export interface LineEventQueueMessage {
   };
 }
 
+export interface CampaignDispatchQueueMessage {
+  schema_version: 1;
+  channel: "CRM";
+  job_type: "campaign_dispatch";
+  draft_id: string;
+  case_id: string;
+}
+
+export type CrmQueueMessage = LineEventQueueMessage | CampaignDispatchQueueMessage;
+
 export type QueueProducerBinding<T> = QueueProducer<T>;
 export type QueueMessageLike<T> = QueueMessage<T>;
 export type QueueBatchLike<T> = QueueBatch<T>;
