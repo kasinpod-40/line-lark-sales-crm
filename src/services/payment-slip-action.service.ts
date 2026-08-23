@@ -60,10 +60,7 @@ export class PaymentSlipActionService {
       if (event.action !== "confirm_slip_payment") throw new Error(`ไม่รองรับ Payment slip action: ${event.action}`);
 
       const verdict = asString(event.value.slip_verdict).trim();
-      if (verdict === "mismatch") {
-        throw new Error("ยอดในสลิปไม่ตรงกับยอด Deal — ระบบไม่อนุญาตให้ยืนยันรับชำระจากการ์ดนี้");
-      }
-      if (!["match", "manual_review"].includes(verdict)) {
+      if (!["match", "mismatch", "manual_review"].includes(verdict)) {
         throw new Error("การ์ดตรวจสลิปนี้เป็นเวอร์ชันเก่าหรือยังไม่มีผลตรวจ กรุณาใช้การ์ดล่าสุด");
       }
 
@@ -71,9 +68,11 @@ export class PaymentSlipActionService {
       const amount = latest?.deal.payment_amount ?? latest?.deal.total_amount ?? 0;
       if (!latest || !(amount > 0)) throw new Error("ยังไม่มี Deal/yอดชำระสำหรับยืนยันรับชำระ");
 
-      // This is a manual CRM confirmation by the Case Owner. It does not call a
-      // bank or PromptPay verification API and never trusts the AI-read slip
-      // amount as the accounting amount; the persisted Deal remains authority.
+      // AI only reports what it can read and whether it appears to match the
+      // persisted Deal. The Case Owner remains the final business authority and
+      // may confirm after manually reviewing the actual slip, even on mismatch.
+      // This action does not call a bank or PromptPay verification API and never
+      // uses the AI-read slip amount as the accounting amount.
       await this.base.closeDeal(latest.recordId, amount);
       const lifetime = await this.base.getCustomerLifetimeValue(route.customer_id);
       await this.base.markCustomerActive(route.customer_id, lifetime);
@@ -100,7 +99,8 @@ export class PaymentSlipActionService {
           ai,
           dealAmount: amount,
         }));
-        await this.lark.replyText(route.root_message_id, `🏆 Sales ยืนยันรับชำระ ฿${amount.toLocaleString("th-TH")} แล้ว • Closed Won`);
+        const reviewNote = verdict === "mismatch" ? " • Sales override หลังตรวจสลิปที่ยอดไม่ตรง" : "";
+        await this.lark.replyText(route.root_message_id, `🏆 Sales ยืนยันรับชำระ ฿${amount.toLocaleString("th-TH")} แล้ว • Closed Won${reviewNote}`);
       }
 
       await this.operational.completeAction(actionKey);
