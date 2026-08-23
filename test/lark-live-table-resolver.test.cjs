@@ -69,3 +69,14 @@ test('lifecycle reconcile and QR recovery operators use resolved concrete table 
   assert.doesNotMatch(recovery, /listByFilter\(args\.baseToken, "Customers"/);
   assert.doesNotMatch(recovery, /batchUpdate\(args\.baseToken, "Sales_Deals"/);
 });
+
+test('QR recovery prefers an explicit D1 UUID for every read, write, and readback', () => {
+  const recovery = fs.readFileSync(path.join(root, 'scripts/recover-failed-qr-case.mjs'), 'utf8');
+  assert.match(recovery, /--database-id/);
+  assert.match(recovery, /databaseRef = args\.databaseId \|\| args\.database/);
+  assert.match(recovery, /d1_resolution: d1Resolution/);
+  assert.match(recovery, /"exact_database_uuid"/);
+  assert.match(recovery, /d1Route\(databaseRef, args\.caseId\)/);
+  assert.match(recovery, /wranglerD1Json\(\s*databaseRef,/s);
+  assert.doesNotMatch(recovery, /752d602c-7d18-4354-9c2f-ac7b8178ba16/);
+});
