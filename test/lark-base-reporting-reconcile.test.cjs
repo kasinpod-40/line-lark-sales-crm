@@ -18,17 +18,27 @@ test('reporting reconcile plan is zero-mutation and covers SLA plus both golden 
   assert.deepEqual(result.sla_formulas.map((field) => field.name).sort(), ['sla_minutes', 'sla_status']);
   assert.equal(result.dashboard_count, 2);
   assert.equal(result.dashboard_block_count, 23);
+  assert.match(result.live_table_resolution, /exact live table ID\/display name/);
+  assert.match(result.excluded_scope, /no view mutation/);
 });
 
-test('reporting reconcile updates only SLA formulas then reuses UX reconciler and refreshes dashboard blocks', () => {
+test('reporting reconcile is emoji-safe and scopes mutation to SLA formulas plus dashboards', () => {
+  assert.match(source, /resolveCanonicalNamedResource/);
+  assert.match(source, /\+table-list/);
   assert.match(source, /\+field-update/);
   assert.match(source, /sla_minutes/);
   assert.match(source, /sla_status/);
-  assert.match(source, /provision-lark-base-ux\.mjs/);
+  assert.match(source, /chatTable\.id/);
+  assert.match(source, /liveDashboardDataConfig/);
+  assert.match(source, /config\.table_name = table\.displayName/);
+  assert.match(source, /\+dashboard-create/);
+  assert.match(source, /\+dashboard-block-create/);
   assert.match(source, /\+dashboard-block-update/);
   assert.match(source, /--position/);
   assert.match(source, /no_table_create:\s*true/);
   assert.match(source, /no_record_mutation:\s*true/);
+  assert.match(source, /no_view_mutation:\s*true/);
   assert.match(source, /no_worker_deploy:\s*true/);
+  assert.doesNotMatch(source, /provision-lark-base-ux\.mjs/);
   assert.doesNotMatch(source, /\+table-create|wrangler deploy|DELETE FROM|INSERT INTO/);
 });
