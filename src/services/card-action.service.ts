@@ -12,6 +12,7 @@ import {
   buildPaymentFormCard,
   buildPaymentPreviewCard,
   buildQuoteFormCard,
+  buildQuoteItemCountCard,
   buildQuotePreviewCard,
 } from "../providers/lark/lark.cards";
 import { LarkClient } from "../providers/lark/lark.client";
@@ -154,7 +155,17 @@ export class CardActionService {
 
         case "open_quote_form": {
           this.requireOwner(route, event.operatorOpenId);
-          await this.lark.replyCard(root, buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7)));
+          await this.lark.replyCard(root, buildQuoteItemCountCard(route.case_id));
+          break;
+        }
+
+        case "open_quote_form_count": {
+          this.requireOwner(route, event.operatorOpenId);
+          const itemCount = Math.max(1, Math.min(5, Math.round(asNumber(event.value.item_count, 1))));
+          await this.lark.replyCard(
+            root,
+            buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), itemCount),
+          );
           break;
         }
 
