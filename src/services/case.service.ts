@@ -5,6 +5,7 @@ import { analyzeImage } from "../ai/image-ai.service";
 import type { CustomerSnapshot } from "../core/models";
 import { newId, stableUuid } from "../utils/id";
 import { buildCaseCard } from "../providers/lark/lark.cards";
+import { buildPaymentSlipReviewCard } from "../providers/lark/payment-slip.card";
 import { LarkClient } from "../providers/lark/lark.client";
 import {
   downloadExternalContent,
@@ -29,6 +30,11 @@ function fileNameFor(event: LineEventQueueMessage, mimeType: string): string {
   if (mimeType === "audio/mp4" || mimeType === "audio/x-m4a") return `line-${event.message.id}.m4a`;
   if (mimeType === "audio/ogg") return `line-${event.message.id}.ogg`;
   return `line-${event.message.id}.bin`;
+}
+
+function imageFileName(event: LineEventQueueMessage, mimeType: string): string {
+  const extension = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+  return `line-${event.message.id}.${extension}`;
 }
 
 function imageAiToAnalysis(image: Awaited<ReturnType<typeof analyzeImage>>): AIAnalysisResult {
@@ -109,6 +115,8 @@ export class CaseService {
       let downloadedBytes: ArrayBuffer | null = null;
       let downloadedMime = "";
       let bridgeMediaSkippedReason = "";
+      let imageDeliveredEarly = false;
+      let earlySlipReviewMessageId = "";
       if (event.message.type === "image") {
         const downloaded = event.message.content_provider_type === "external" && event.message.original_content_url
           ? await downloadExternalContent(event.message.original_content_url, MAX_LARK_INLINE_FILE_BYTES)
@@ -116,7 +124,41 @@ export class CaseService {
         if (!downloaded.mime_type.startsWith("image/")) throw new Error(`LINE message content is not an image: ${downloaded.mime_type}`);
         downloadedBytes = downloaded.bytes;
         downloadedMime = downloaded.mime_type;
-        ai = imageAiToAnalysis(await analyzeImage(this.env, downloaded.bytes, downloaded.mime_type));
+
+        // Vision inference can be the slowest part of the media path. Start it,
+        // but do not block visible delivery to an already-open Case Thread.
+        const imageAnalysisPromise = analyzeImage(this.env, downloaded.bytes, downloaded.mime_type);
+        const fastRoute = await activeRoutePromise;
+        if (fastRoute?.root_message_id) {
+          const fileName = imageFileName(event, downloaded.mime_type);
+          try {
+            const imageKey = await this.lark.uploadMessageImage(downloaded.bytes, downloaded.mime_type, fileName);
+            await this.lark.replyImage(fastRoute.root_message_id, imageKey);
+            imageDeliveredEarly = true;
+          } catch (error) {
+            console.warn("LARK_FAST_IMAGE_DELIVERY_FALLBACK", error instanceof Error ? error.message : String(error));
+          }
+
+          // A Payment-stage case already gives us enough business context to
+          // surface a manual-review card immediately. AI may enrich the same
+          // card later, but it must never auto-confirm payment.
+          if (fastRoute.status === "PAYMENT") {
+            const latest = await this.base.getLatestDealForCase(fastRoute.case_id).catch(() => null);
+            const dealAmount = latest?.deal.payment_amount ?? latest?.deal.total_amount ?? 0;
+            if (dealAmount > 0) {
+              earlySlipReviewMessageId = await this.lark.replyCard(
+                fastRoute.root_message_id,
+                buildPaymentSlipReviewCard({
+                  caseId: fastRoute.case_id,
+                  dealAmount,
+                  aiDetected: false,
+                }),
+              );
+            }
+          }
+        }
+
+        ai = imageAiToAnalysis(await imageAnalysisPromise);
       } else if (event.message.type === "file" && (event.message.file_size ?? 0) > MAX_LARK_INLINE_FILE_BYTES) {
         bridgeMediaSkippedReason = `ไฟล์ใหญ่เกิน ${Math.round(MAX_LARK_INLINE_FILE_BYTES / 1024 / 1024)} MB`;
         ai = await analyzeIncomingText(this.env, messageText(event));
@@ -207,21 +249,51 @@ export class CaseService {
       if (!route.root_message_id) throw new Error("Case root Lark message was not created");
 
       if (event.message.type === "image" && downloadedBytes) {
-        const extension = downloadedMime.includes("png") ? "png" : downloadedMime.includes("webp") ? "webp" : "jpg";
-        const fileName = `line-${event.message.id}.${extension}`;
-        try {
-          const imageKey = await this.lark.uploadMessageImage(downloadedBytes, downloadedMime, fileName);
-          await this.lark.replyImage(route.root_message_id, imageKey);
-        } catch (imageError) {
+        const fileName = imageFileName(event, downloadedMime);
+        if (!imageDeliveredEarly) {
           try {
-            const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName);
-            await this.lark.replyFile(route.root_message_id, fileKey);
-            console.warn("LARK_IMAGE_FILE_FALLBACK", imageError instanceof Error ? imageError.message : String(imageError));
-          } catch (fileError) {
-            throw new Error(`Lark image delivery failed: ${imageError instanceof Error ? imageError.message : String(imageError)}; file fallback: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+            const imageKey = await this.lark.uploadMessageImage(downloadedBytes, downloadedMime, fileName);
+            await this.lark.replyImage(route.root_message_id, imageKey);
+          } catch (imageError) {
+            try {
+              const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName);
+              await this.lark.replyFile(route.root_message_id, fileKey);
+              console.warn("LARK_IMAGE_FILE_FALLBACK", imageError instanceof Error ? imageError.message : String(imageError));
+            } catch (fileError) {
+              throw new Error(`Lark image delivery failed: ${imageError instanceof Error ? imageError.message : String(imageError)}; file fallback: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
+            }
           }
         }
-        await this.lark.replyText(route.root_message_id, `ลูกค้า • ${messageText(event, ai)}`);
+
+        const paymentSlipCandidate = ai.intent === "payment_slip" || route.status === "PAYMENT";
+        const visibleText = paymentSlipCandidate
+          ? ai.intent === "payment_slip"
+            ? "ลูกค้าส่งสลิป/หลักฐานการชำระเงิน กรุณาตรวจสอบความถูกต้อง"
+            : "ลูกค้าส่งรูปในขั้นตอนชำระเงิน กรุณาตรวจสอบว่าเป็นสลิป/หลักฐานการชำระเงิน"
+          : messageText(event, ai);
+        await this.lark.replyText(route.root_message_id, `ลูกค้า • ${visibleText}`);
+
+        if (paymentSlipCandidate) {
+          const latest = await this.base.getLatestDealForCase(route.case_id);
+          const dealAmount = latest?.deal.payment_amount ?? latest?.deal.total_amount ?? 0;
+          if (dealAmount > 0) {
+            const reviewCard = buildPaymentSlipReviewCard({
+              caseId: route.case_id,
+              dealAmount,
+              slipAmount: ai.image_ai?.slip_amount,
+              slipBank: ai.image_ai?.slip_bank,
+              confidence: ai.image_ai?.confidence ?? ai.confidence,
+              aiDetected: ai.intent === "payment_slip",
+            });
+            if (earlySlipReviewMessageId) {
+              await this.lark.patchCard(earlySlipReviewMessageId, reviewCard).catch(async () => {
+                await this.lark.replyCard(route.root_message_id!, reviewCard);
+              });
+            } else {
+              await this.lark.replyCard(route.root_message_id, reviewCard);
+            }
+          }
+        }
       } else if ((event.message.type === "file" || event.message.type === "audio") && downloadedBytes) {
         const fileName = fileNameFor(event, downloadedMime);
         const fileKey = await this.lark.uploadMessageFile(downloadedBytes, downloadedMime, fileName, event.message.duration_ms);
