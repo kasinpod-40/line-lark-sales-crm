@@ -59,6 +59,14 @@ export class PaymentSlipActionService {
 
       if (event.action !== "confirm_slip_payment") throw new Error(`ไม่รองรับ Payment slip action: ${event.action}`);
 
+      const verdict = asString(event.value.slip_verdict).trim();
+      if (verdict === "mismatch") {
+        throw new Error("ยอดในสลิปไม่ตรงกับยอด Deal — ระบบไม่อนุญาตให้ยืนยันรับชำระจากการ์ดนี้");
+      }
+      if (!["match", "manual_review"].includes(verdict)) {
+        throw new Error("การ์ดตรวจสลิปนี้เป็นเวอร์ชันเก่าหรือยังไม่มีผลตรวจ กรุณาใช้การ์ดล่าสุด");
+      }
+
       const latest = await this.base.getLatestDealForCase(route.case_id);
       const amount = latest?.deal.payment_amount ?? latest?.deal.total_amount ?? 0;
       if (!latest || !(amount > 0)) throw new Error("ยังไม่มี Deal/yอดชำระสำหรับยืนยันรับชำระ");
