@@ -53,6 +53,12 @@ function resolveGeminiImageModel(env: Env): string {
   return configured;
 }
 
+function thinkingLevelForModel(model: string): "minimal" | "low" {
+  // Gemini 3.6 supports minimal thinking, which is the correct latency profile
+  // for deterministic OCR/extraction. Gemini 3.7 does not support minimal.
+  return model === FALLBACK_GEMINI_IMAGE_MODEL ? "low" : "minimal";
+}
+
 function extractGeminiText(value: unknown): string {
   if (!isRecord(value) || !Array.isArray(value.candidates)) return "";
   const first = value.candidates[0];
@@ -152,8 +158,8 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
               ],
             }],
             generationConfig: {
-              maxOutputTokens: 768,
-              thinkingConfig: { thinkingLevel: "low" },
+              maxOutputTokens: 256,
+              thinkingConfig: { thinkingLevel: thinkingLevelForModel(model) },
               responseMimeType: "application/json",
               responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
             },
