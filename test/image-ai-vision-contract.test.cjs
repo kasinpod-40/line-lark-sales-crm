@@ -19,9 +19,9 @@ test('payment-slip image analysis uses Gemini 3.7 Flash multimodal structured ou
   assert.match(source, /mimeType: normalizedMime/);
   assert.match(source, /data: arrayBufferToBase64\(bytes\)/);
   assert.match(source, /thinkingConfig:\s*\{\s*thinkingLevel:\s*"low"\s*\}/);
-  assert.match(source, /responseFormat:\s*\{/);
-  assert.match(source, /mimeType:\s*"application\/json"/);
-  assert.match(source, /schema:\s*IMAGE_ANALYSIS_JSON_SCHEMA/);
+  assert.match(source, /responseMimeType:\s*"application\/json"/);
+  assert.match(source, /responseJsonSchema:\s*IMAGE_ANALYSIS_JSON_SCHEMA/);
+  assert.doesNotMatch(source, /responseFormat:\s*\{/);
   assert.match(source, /slip_amount/);
   assert.match(source, /ห้ามใช้เลขบัญชี เลขอ้างอิง วันที่ เวลา หรือข้อมูลใน QR code เป็น slip_amount/);
   assert.doesNotMatch(source, /temperature:\s*0|candidateCount|thinkingBudget/);
