@@ -139,7 +139,7 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
   let lastError = "Gemini image analysis failed without a response";
 
   outer: for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
-    const model = models[modelIndex];
+    const model = models[modelIndex]!;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const delayMs = retryDelayMs(modelIndex, attempt);
       if (modelIndex > 0 || attempt > 0) await sleep(delayMs);
