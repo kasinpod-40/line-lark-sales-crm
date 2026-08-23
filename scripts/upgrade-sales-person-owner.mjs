@@ -25,17 +25,7 @@ function parseArgs(argv) {
     else if (arg === "--chat-table-id") args.tableIds.chat = argv[++i] || "";
     else if (arg === "--deals-table-id") args.tableIds.deals = argv[++i] || "";
     else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage:
-  node scripts/upgrade-sales-person-owner.mjs
-  node scripts/upgrade-sales-person-owner.mjs --apply \\
-    --base-token <base_token> \\
-    --customers-table-id <table_id> \\
-    --chat-table-id <table_id> \\
-    --deals-table-id <table_id>
-
-Default mode is plan-only and performs zero Lark mutations.
-Apply mode uses the three concrete table IDs, creates only the missing single-person 'sales' field,
-and backfills it from the existing technical open-id field. No table/view/formula/record is deleted.`);
+      console.log(`Usage:\n  node scripts/upgrade-sales-person-owner.mjs\n  node scripts/upgrade-sales-person-owner.mjs --apply \\\n    --base-token <base_token> \\\n    --customers-table-id <table_id> \\\n    --chat-table-id <table_id> \\\n    --deals-table-id <table_id>\n\nDefault mode is plan-only and performs zero Lark mutations.\nApply mode uses the three concrete table IDs, creates only the missing single-person 'sales' field,\nand backfills it from the existing technical open-id field. No table/view/formula/record is deleted.`);
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -155,8 +145,11 @@ function exportRecords(baseToken, tableId, label, sourceField, tempDir) {
     "--output", relativePath,
     "--overwrite",
     "--minimal-stdout",
-  ], `Export records ${label}`);
-  if (result?.has_more === true) throw new Error(`${label} has more than 2000 records; refusing partial backfill`);
+  ], `Export records ${label}`, { requireOk: false });
+  if (!result || typeof result.has_more !== "boolean") {
+    throw new Error(`Export records ${label} returned invalid minimal result (missing boolean has_more)`);
+  }
+  if (result.has_more === true) throw new Error(`${label} has more than 2000 records; refusing partial backfill`);
   const absolute = resolve(relativePath);
   const text = readFileSync(absolute, "utf8");
   const rows = [];
