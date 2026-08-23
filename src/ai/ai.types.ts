@@ -18,7 +18,7 @@ export type ActionIntent =
 
 export type BuyerIntent = "Just Browsing" | "Interested" | "Purchase Intent" | "Ready To Buy";
 export type CustomerStage = "New Lead" | "Interested" | "Negotiating" | "Closing" | "Won" | "Lost";
-export type AIProviderName = "rule_engine" | "workers_ai" | "safe_fallback";
+export type AIProviderName = "rule_engine" | "workers_ai" | "gemini" | "safe_fallback";
 
 export interface AIAnalysisResult {
   intent: ActionIntent;
@@ -44,4 +44,5 @@ export interface ImageAnalysisResult {
   slip_amount?: number;
   slip_bank?: string;
   confidence?: number;
+  provider?: "gemini" | "safe_fallback";
 }
