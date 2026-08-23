@@ -12,6 +12,7 @@ import {
 import { LarkClient } from "../providers/lark/lark.client";
 import { paymentQrFlex } from "../providers/line/payment.flex";
 import { getLineUserProfile, pushLineMessages } from "../providers/line/line.provider";
+import { handleQrAsset } from "../routes/assets/qr.route";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
 import { asNumber, asString, isRecord, type UnknownRecord } from "../utils/json";
@@ -208,11 +209,12 @@ export class PaymentCardActionService {
     await this.rememberUi(route.case_id, operatorOpenId, messageId, draftId);
   }
 
-  private async preflightQrUrl(qrUrl: string): Promise<void> {
-    const response = await fetch(qrUrl, {
-      method: "GET",
-      headers: { "cache-control": "no-cache" },
-    });
+  private async preflightQrAsset(qrUrl: string, token: string): Promise<void> {
+    // Do not global-fetch this Worker's own workers.dev hostname: same-zone
+    // Worker-to-Worker fetches can be blocked without an explicit service binding.
+    // Exercise the exact public route handler directly instead. This validates
+    // the D1 asset lookup, QR encoder, PNG bytes and response headers before LINE.
+    const response = await handleQrAsset(new Request(qrUrl, { method: "GET" }), this.env, token);
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const bytes = await response.arrayBuffer();
     if (!response.ok || !contentType.startsWith("image/png") || bytes.byteLength < 256) {
@@ -340,9 +342,8 @@ export class PaymentCardActionService {
           if (!baseUrl.startsWith("https://")) throw new Error("PUBLIC_BASE_URL ต้องเป็น HTTPS");
           const qrUrl = `${baseUrl}/assets/qr/${token}.png`;
 
-          // Fail closed: the exact public PNG used by LINE must be reachable
-          // before the Deal is allowed to advance to QR Sent.
-          await this.preflightQrUrl(qrUrl);
+          // Fail closed: QR must render to a real PNG before the Deal advances.
+          await this.preflightQrAsset(qrUrl, token);
           await this.base.markQrState(draft.payload.deal_record_id, draft.payload.amount, "Pending QR Send");
           await pushLineMessages(
             this.env,
