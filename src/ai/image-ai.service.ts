@@ -2,8 +2,37 @@ import type { Env } from "../config/env";
 import type { ImageAnalysisResult } from "./ai.types";
 import { asNumber, asString, isRecord } from "../utils/json";
 
-const LEGACY_META_VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
-const DEFAULT_VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-2.5-flash";
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+const IMAGE_ANALYSIS_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    image_type: {
+      type: "string",
+      enum: ["payment_slip", "product_image", "other_image", "unknown"],
+    },
+    summary: { type: "string" },
+    slip_amount: { type: "number", minimum: 0 },
+    slip_bank: { type: "string" },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+  },
+  required: ["image_type", "summary", "slip_amount", "slip_bank", "confidence"],
+  additionalProperties: false,
+  propertyOrdering: ["image_type", "summary", "slip_amount", "slip_bank", "confidence"],
+} as const;
+
+const IMAGE_AI_PROMPT = [
+  "คุณคือ AI Vision สำหรับ LINE Sales CRM ในประเทศไทย",
+  "วิเคราะห์เฉพาะรูปที่ได้รับและตอบ JSON เท่านั้น ห้ามใส่ Markdown หรือข้อความนอก JSON",
+  "ถ้าเป็นสลิปโอนเงินหรือหน้าจอชำระเงินสำเร็จอย่างชัดเจน ให้ image_type=payment_slip",
+  "ถ้าอ่านยอดเงินที่โอนจริงได้ ให้ slip_amount เป็นตัวเลขเท่านั้น เช่น 888.00 ให้ตอบ 888",
+  "ห้ามใช้เลขบัญชี เลขอ้างอิง วันที่ เวลา หรือข้อมูลใน QR code เป็น slip_amount",
+  "ถ้าอ่านชื่อธนาคารได้ ให้ใส่ slip_bank ถ้าอ่านไม่ได้ให้เป็นค่าว่าง",
+  "ถ้าเป็นรูปสินค้าให้ image_type=product_image ถ้าเป็นรูปทั่วไปให้ other_image และถ้าไม่แน่ใจให้ unknown",
+  "summary ต้องเป็นภาษาไทยสั้นและบอกเฉพาะสิ่งที่เห็นจริง",
+  "confidence ต้องอยู่ระหว่าง 0 ถึง 1 และห้ามเดาข้อมูลที่อ่านไม่ชัด",
+].join(" ");
 
 function arrayBufferToBase64(bytes: ArrayBuffer): string {
   const data = new Uint8Array(bytes);
@@ -15,85 +44,125 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function extractText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (!isRecord(value)) return "";
-  const direct = asString(value.answer) || asString(value.response) || asString(value.result) || asString(value.text);
-  if (direct) return direct;
-  if (Array.isArray(value.choices)) {
-    const first = value.choices[0];
-    if (isRecord(first) && isRecord(first.message)) return asString(first.message.content);
+function extractGeminiText(value: unknown): string {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return "";
+  const first = value.candidates[0];
+  if (!isRecord(first) || !isRecord(first.content) || !Array.isArray(first.content.parts)) return "";
+
+  const answerTexts: string[] = [];
+  const fallbackTexts: string[] = [];
+  for (const part of first.content.parts) {
+    if (!isRecord(part)) continue;
+    const text = asString(part.text).trim();
+    if (!text) continue;
+    fallbackTexts.push(text);
+    if (part.thought !== true) answerTexts.push(text);
   }
-  return "";
+  const texts = answerTexts.length > 0 ? answerTexts : fallbackTexts;
+  return texts.at(-1)?.trim() || "";
 }
 
-function resolveVisionModel(env: Env): string {
-  const configured = env.AI_VISION_MODEL?.trim();
-  // The old reusable install template pointed at Llama 3.2 Vision, which needs
-  // a per-account Meta license bootstrap before first use. Existing installs
-  // should not silently keep falling back just because they retained that old
-  // default, so upgrade that exact legacy value to the OCR-focused model.
-  if (!configured || configured === LEGACY_META_VISION_MODEL) return DEFAULT_VISION_MODEL;
-  return configured;
+function extractFinishReason(value: unknown): string {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return "unknown";
+  const first = value.candidates[0];
+  return isRecord(first) ? asString(first.finishReason) || "unknown" : "unknown";
 }
 
-function promptForSlipExtraction(): string {
-  return [
-    "Inspect this image for a Thai LINE sales CRM.",
-    "Return exactly one JSON object and no markdown.",
-    "Use keys image_type, summary, slip_amount, slip_bank, confidence.",
-    "image_type must be payment_slip, product_image, other_image, or unknown.",
-    "If this is a Thai bank transfer/payment slip, classify it as payment_slip.",
-    "Read the actual transferred amount printed on the slip as slip_amount, using a JSON number.",
-    "Read the bank name as slip_bank only when visible.",
-    "summary must be concise Thai.",
-    "confidence must be a number from 0 to 1.",
-    "Do not guess unreadable fields and do not treat QR payload data, account numbers, transaction IDs, or dates as the payment amount.",
-  ].join(" ");
-}
-
-async function runVisionModel(env: Env, model: string, dataUri: string): Promise<unknown> {
-  const question = promptForSlipExtraction();
-
-  if (model === DEFAULT_VISION_MODEL) {
-    // Moondream 3.1 native Workers AI contract. It is optimized for OCR and
-    // structured visual queries and returns the query result in `answer`.
-    return env.AI!.run(model, {
-      task: "query",
-      image: dataUri,
-      question,
-      reasoning: false,
-      stream: false,
-      temperature: 0.1,
-      max_tokens: 500,
-    });
+function parseJsonObject(raw: string): Record<string, unknown> {
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").replace(/^\uFEFF/, "").trim();
+  try {
+    const parsed: unknown = JSON.parse(cleaned);
+    if (isRecord(parsed)) return parsed;
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1));
+      if (isRecord(parsed)) return parsed;
+    }
   }
+  throw new Error(`Gemini image response is not valid JSON: ${cleaned.replace(/\s+/g, " ").slice(0, 240) || "<empty>"}`);
+}
 
-  // Keep an explicit custom-model lane for installations that intentionally
-  // select another compatible multimodal text-generation model.
-  return env.AI!.run(model, {
-    messages: [
-      { role: "system", content: "You extract payment-slip facts accurately and return strict JSON." },
-      { role: "user", content: question },
-    ],
-    image: dataUri,
-    max_tokens: 500,
-    temperature: 0.1,
-  });
+function safeFallback(reason: string): ImageAnalysisResult {
+  console.warn("AI_IMAGE_FALLBACK", JSON.stringify({
+    provider: "gemini",
+    stage: "vision_inference_or_parse",
+    error: reason.slice(0, 240),
+  }));
+  return {
+    image_type: "unknown",
+    summary: "ลูกค้าส่งรูปภาพ แต่ระบบยังวิเคราะห์รูปไม่ได้",
+    confidence: 0,
+    provider: "safe_fallback",
+  };
 }
 
 export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: string): Promise<ImageAnalysisResult> {
-  if (!env.AI) return { image_type: "unknown", summary: "ลูกค้าส่งรูปภาพ", confidence: 0 };
-  const model = resolveVisionModel(env);
+  const apiKey = env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return safeFallback("GEMINI_API_KEY is not configured");
+
+  const normalizedMime = mimeType.split(";")[0]?.trim() || "image/jpeg";
+  if (!normalizedMime.startsWith("image/")) return safeFallback(`Unsupported image content type: ${normalizedMime}`);
+  if (bytes.byteLength === 0) return safeFallback("Image is empty");
+  if (bytes.byteLength > MAX_IMAGE_BYTES) return safeFallback(`Image is too large for Gemini analysis: ${bytes.byteLength} bytes`);
+
+  const model = env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_GEMINI_IMAGE_MODEL;
+  let response: Response;
   try {
-    const dataUri = `data:${mimeType};base64,${arrayBufferToBase64(bytes)}`;
-    const output = await runVisionModel(env, model, dataUri);
-    const text = extractText(output).replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start < 0 || end < start) throw new Error("Vision model returned no JSON object");
-    const parsed: unknown = JSON.parse(text.slice(start, end + 1));
-    if (!isRecord(parsed)) throw new Error("Vision JSON is not an object");
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{
+            role: "user",
+            parts: [
+              { text: IMAGE_AI_PROMPT },
+              {
+                inlineData: {
+                  mimeType: normalizedMime,
+                  data: arrayBufferToBase64(bytes),
+                },
+              },
+            ],
+          }],
+          generationConfig: {
+            temperature: 0,
+            candidateCount: 1,
+            maxOutputTokens: 768,
+            responseMimeType: "application/json",
+            responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      },
+    );
+  } catch (error) {
+    return safeFallback(`Gemini network error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const bodyText = await response.text();
+  let body: unknown = {};
+  try {
+    body = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    body = { raw: bodyText.slice(0, 500) };
+  }
+
+  if (!response.ok) {
+    return safeFallback(`Gemini HTTP ${response.status}: ${JSON.stringify(body).slice(0, 400)}`);
+  }
+
+  const raw = extractGeminiText(body);
+  if (!raw) return safeFallback(`Gemini returned empty response (finishReason=${extractFinishReason(body)})`);
+
+  try {
+    const parsed = parseJsonObject(raw);
     const rawType = asString(parsed.image_type);
     const imageType: ImageAnalysisResult["image_type"] = ["payment_slip", "product_image", "other_image", "unknown"].includes(rawType)
       ? rawType as ImageAnalysisResult["image_type"]
@@ -104,15 +173,10 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
       summary: asString(parsed.summary).trim().slice(0, 500) || "ลูกค้าส่งรูปภาพ",
       slip_amount: imageType === "payment_slip" && amount >= 0 ? amount : undefined,
       slip_bank: imageType === "payment_slip" ? asString(parsed.slip_bank).trim() || undefined : undefined,
-      confidence: Math.max(0, Math.min(1, asNumber(parsed.confidence, 0.7))),
+      confidence: Math.max(0, Math.min(1, asNumber(parsed.confidence, 0))),
+      provider: "gemini",
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("AI_IMAGE_FALLBACK", JSON.stringify({
-      stage: "vision_inference_or_parse",
-      model,
-      error: message.slice(0, 240),
-    }));
-    return { image_type: "unknown", summary: "ลูกค้าส่งรูปภาพ", confidence: 0 };
+    return safeFallback(error instanceof Error ? error.message : String(error));
   }
 }
