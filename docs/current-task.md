@@ -4,7 +4,7 @@ Last updated: 2026-08-23 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR ONE-CARD + EMBEDDED LINE FLEX LIVE-PASSED / CUSTOMER + CASE PAYMENT LIFECYCLE LIVE-PASSED / NEXT STEP IS SALES_DEALS READBACK THEN PAYMENT/CLOSED-WON E2E.**
+**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR ONE-CARD + EMBEDDED LINE FLEX E2E LIVE-PASSED / CUSTOMER + CASE + DEAL PAYMENT-PENDING LIFECYCLE LIVE-PASSED / NEXT STEP IS PAYMENT CONFIRMATION → CLOSED WON E2E.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only. PR #1 remains Draft / Open / Unmerged until the remaining controlled E2E acceptance is complete.
 
@@ -93,8 +93,17 @@ Presentation authority from latest exported `.base`:
 12. CASE payment lifecycle — PASS visually after QR success:
    - CASE row `case_status = PAYMENT`
    - CASE row `lead_quality = 🔥 Hot Lead`.
+13. Sales_Deals post-QR readback — PASS visually on the same single existing Deal record:
+   - `deal_value_thb = ฿32,100`
+   - `deal_status = Open`
+   - `pipeline_stage = Payment Pending`
+   - `quotation_no = QT-20260823`
+   - `payment_status = QR Sent`
+   - exactly 1 record remains in the view; no duplicate Deal was created.
 
-Still not accepted: Sales_Deals post-QR readback (`pipeline_stage = Payment Pending`, `payment_status = QR Sent`), burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, payment confirmation/Closed Won, campaigns/retry/cross-route concurrency.
+Corrected QR E2E is therefore fully accepted.
+
+Still not accepted: payment confirmation/Closed Won, burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, campaigns/retry/cross-route concurrency.
 
 ## Canonical commercial lifecycle — locked
 
@@ -139,7 +148,7 @@ Correct QR behavior:
 9. Success → green terminal card, no actions.
 10. If QR rendering or LINE push fails, the system must not falsely mark `QR Sent`.
 
-Live evidence on 2026-08-23 14:30 ICT confirms items 1, 2, 7 and 9, plus Customer/CASE Payment lifecycle state.
+Live evidence on 2026-08-23 14:30–14:33 ICT confirms the one-card UI, embedded QR delivery, terminal state, Customer/CASE Payment state, and the same Deal record at `Payment Pending / QR Sent`.
 
 ## QR PNG runtime incident — closed
 
@@ -172,27 +181,23 @@ GitHub CI:
 - result: **SUCCESS**
 - `npm run check`: PASS (typecheck + 117 tests including real PNG inflate test + Worker dry-run bundle)
 
-Current branch HEAD after this evidence update is documentation-only and does not supersede the verified code SHA above.
+Current branch HEAD after evidence-only documentation updates does not supersede the verified code SHA above.
 
 ## Controlled live operation next
 
 Do not recreate Base/D1/Queue/DLQ, do not rerun migrations, do not rerun lifecycle schema reconciliation, and do not rerun failed-QR recovery.
 
 Next operations:
-1. Verify the same existing Sales_Deals record after the successful QR has:
-   - `pipeline_stage = Payment Pending`
-   - `payment_status = QR Sent`
-   - payment amount ฿32,100
-   - same original deal record; no duplicate deal.
-2. If that readback passes, mark corrected QR E2E fully accepted.
-3. Proceed to payment confirmation / Closed Won E2E:
-   - payment confirmation action/command
-   - Deal → Payment Received / Closed Won as contract requires
-   - Customer → `🏆 Active Customer`
-   - total spend updates from Closed Won only
-   - existing Case Owner attribution remains unchanged
-   - no real payment is performed; use demo acceptance only.
-4. Continue remaining controlled E2E: burst race, true concurrent Claim, specialist reply owner-preservation, media both directions, campaigns/retry/cross-route concurrency.
+1. Proceed to payment confirmation / Closed Won E2E on the same existing Deal:
+   - use the demo payment-confirmation path only; do not perform a real payment
+   - Deal must advance through the intended payment-confirmation state and end `Closed Won`
+   - Customer must become `🏆 Active Customer`
+   - Customer `total_spend_thb` must become ฿32,100 from Closed Won only
+   - existing Case Owner attribution must remain unchanged
+   - no duplicate Deal may be created
+   - LINE/Lark confirmation messages/cards must be idempotent on retry.
+2. After Closed Won, verify Deal/Customer/CASE readback and then close the Case only when its separate Case-close acceptance is exercised.
+3. Continue remaining controlled E2E: burst race, true concurrent Claim, specialist reply owner-preservation, media both directions, campaigns/retry/cross-route concurrency.
 
 ## Terminal safety
 
