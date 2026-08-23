@@ -54,12 +54,13 @@ function parseMessageEvent(body: UnknownRecord): LarkMessageEvent | null {
   };
 }
 
-function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
+export function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
   if (!isRecord(body.header) || !isRecord(body.event)) return null;
   const event = body.event;
   const action = isRecord(event.action) ? event.action : isRecord(body.action) ? body.action : {};
   const operator = isRecord(event.operator) ? event.operator : {};
   const operatorId = isRecord(operator.operator_id) ? operator.operator_id : {};
+  const context = isRecord(event.context) ? event.context : isRecord(body.context) ? body.context : {};
 
   // Card 2.0 callback behavior values are surfaced as the button action value.
   // Some delivery adapters expose the same value as a JSON string in
@@ -73,6 +74,7 @@ function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
   return {
     eventId: asString(body.header.event_id) || crypto.randomUUID(),
     operatorOpenId: openId,
+    messageId: asString(context.open_message_id) || asString(event.message_id) || undefined,
     action: actionName,
     value,
     formValue,
