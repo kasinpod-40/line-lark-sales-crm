@@ -132,6 +132,26 @@ test('quote form opens with one item and adds items incrementally', () => {
   assert.doesNotMatch(cardText(three), /รายการ 4/);
 });
 
+test('quote form keeps visible labels even when fields have default values', () => {
+  const card = buildQuoteFormCard('case-1', 7, 2, {
+    item_1_description: 'สินค้า A',
+    item_1_quantity: '2',
+    item_1_unit_price: '7500',
+    discount: '0',
+    vat_rate: '7',
+    shipping_fee: '0',
+  });
+  const text = cardText(card);
+  assert.match(text, /สินค้า\/บริการ/);
+  assert.match(text, /จำนวน/);
+  assert.match(text, /ราคาต่อหน่วย \(บาท\)/);
+  assert.match(text, /ส่วนลด \(บาท\)/);
+  assert.match(text, /VAT \(%\)/);
+  assert.match(text, /ค่าจัดส่ง \(บาท\)/);
+  assert.match(text, /ใช้ได้ถึง/);
+  assert.match(text, /หมายเหตุ/);
+});
+
 test('quote add-item rebuild preserves submitted values', () => {
   const card = buildQuoteFormCard('case-1', 7, 2, {
     quotation_no: 'QT-TEST',
