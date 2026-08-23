@@ -2,7 +2,8 @@ import type { Env } from "../config/env";
 import type { ImageAnalysisResult } from "./ai.types";
 import { asNumber, asString, isRecord } from "../utils/json";
 
-const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-2.5-flash";
+const LEGACY_GEMINI_IMAGE_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.7-flash";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const IMAGE_ANALYSIS_JSON_SCHEMA = {
@@ -32,7 +33,7 @@ const IMAGE_AI_PROMPT = [
   "ถ้าเป็นรูปสินค้าให้ image_type=product_image ถ้าเป็นรูปทั่วไปให้ other_image และถ้าไม่แน่ใจให้ unknown",
   "summary ต้องเป็นภาษาไทยสั้นและบอกเฉพาะสิ่งที่เห็นจริง",
   "confidence ต้องอยู่ระหว่าง 0 ถึง 1 และห้ามเดาข้อมูลที่อ่านไม่ชัด",
-].join(" ");
+].join("\n\n");
 
 function arrayBufferToBase64(bytes: ArrayBuffer): string {
   const data = new Uint8Array(bytes);
@@ -42,6 +43,15 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
     binary += String.fromCharCode(...data.subarray(index, Math.min(index + chunk, data.length)));
   }
   return btoa(binary);
+}
+
+function resolveGeminiImageModel(env: Env): string {
+  const configured = env.GEMINI_IMAGE_MODEL?.trim();
+  // Existing installs may still carry the retired 2.5 Flash value. Upgrade that
+  // exact legacy default automatically so deployment does not depend on a local
+  // wrangler variable being edited by hand.
+  if (!configured || configured === LEGACY_GEMINI_IMAGE_MODEL) return DEFAULT_GEMINI_IMAGE_MODEL;
+  return configured;
 }
 
 function extractGeminiText(value: unknown): string {
@@ -107,7 +117,7 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
   if (bytes.byteLength === 0) return safeFallback("Image is empty");
   if (bytes.byteLength > MAX_IMAGE_BYTES) return safeFallback(`Image is too large for Gemini analysis: ${bytes.byteLength} bytes`);
 
-  const model = env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_GEMINI_IMAGE_MODEL;
+  const model = resolveGeminiImageModel(env);
   let response: Response;
   try {
     response = await fetch(
@@ -132,12 +142,14 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
             ],
           }],
           generationConfig: {
-            temperature: 0,
-            candidateCount: 1,
             maxOutputTokens: 768,
-            responseMimeType: "application/json",
-            responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
-            thinkingConfig: { thinkingBudget: 0 },
+            thinkingConfig: { thinkingLevel: "low" },
+            responseFormat: {
+              text: {
+                mimeType: "application/json",
+                schema: IMAGE_ANALYSIS_JSON_SCHEMA,
+              },
+            },
           },
         }),
       },
