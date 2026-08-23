@@ -310,7 +310,16 @@ export function buildCampaignPreviewCard(caseId: string, draftId: string, campai
   );
 }
 
-export function buildCancelledDraftCard(kind: DraftCardKind): unknown {
+export function buildCancelledDraftCard(kind?: DraftCardKind): unknown {
+  if (!kind) {
+    return card(
+      "grey",
+      "⚪ รายการนี้สิ้นสุดแล้ว",
+      [md("รายการนี้ถูกยกเลิก ดำเนินการเสร็จ หรือหมดอายุแล้ว\nไม่มี action ที่ใช้งานได้ต่อจากการ์ดใบนี้")],
+      "รายการนี้สิ้นสุดแล้ว",
+      false,
+    );
+  }
   const labels: Record<DraftCardKind, string> = {
     quote: "ใบเสนอราคา",
     payment: "QR ชำระเงิน",
@@ -321,7 +330,7 @@ export function buildCancelledDraftCard(kind: DraftCardKind): unknown {
   return card(
     "grey",
     `⚪ ${label} — ยกเลิกแล้ว`,
-    [md(`รายการ **${label}** นี้ถูกยกเลิกแล้ว\nไม่มีการส่ง LINE และไม่มี action ที่ใช้งานได้ต่อจากการ์ดใบนี้`) ],
+    [md(`รายการ **${label}** นี้ถูกยกเลิกแล้ว\nไม่มีการส่ง LINE และไม่มี action ที่ใช้งานได้ต่อจากการ์ดใบนี้`)],
     `${label} ยกเลิกแล้ว`,
     false,
   );
