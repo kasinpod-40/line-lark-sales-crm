@@ -33,13 +33,14 @@ test('canonical Base contract models payment pending explicitly and has no blank
   assert.ok(pipeline.every((name) => name.trim().length > 0));
 });
 
-test('QR confirmation embeds one PNG inside Flex and validates the public asset before advancing state', () => {
+test('QR confirmation embeds one PNG inside Flex and validates the asset before advancing state', () => {
   const source = read('src/services/payment-card-action.service.ts');
   assert.match(source, /paymentQrFlex/);
   assert.doesNotMatch(source, /LineImageMessage/);
   assert.doesNotMatch(source, /\[paymentFlex\(/);
+  assert.match(source, /handleQrAsset/);
 
-  const preflight = source.indexOf('await this.preflightQrUrl(qrUrl)');
+  const preflight = source.indexOf('await this.preflightQrAsset(qrUrl, token)');
   const pending = source.indexOf('"Pending QR Send"', preflight);
   const push = source.indexOf('await pushLineMessages(', preflight);
   const sent = source.indexOf('"QR Sent"', push);
