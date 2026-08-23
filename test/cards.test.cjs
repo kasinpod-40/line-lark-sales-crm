@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  buildCancelledDraftCard,
   buildCaseCard,
   buildQuoteFormCard,
   buildPaymentFormCard,
@@ -117,6 +118,16 @@ test('root-chat guard warning is Card 2.0 and explicitly says message was not se
   assert.equal(card.header.template, 'orange');
   assert.match(cardText(card), /ไม่ได้ส่งไป LINE/);
   assert.match(cardText(card), /Reply in Thread/);
+});
+
+test('cancelled draft cards are grey terminal cards with no actions', () => {
+  for (const kind of ['quote', 'payment', 'close_deal', 'campaign']) {
+    const card = buildCancelledDraftCard(kind);
+    assertCard2(card);
+    assert.equal(card.header.template, 'grey');
+    assert.deepEqual(actionNames(card), []);
+    assert.match(cardText(card), /ยกเลิกแล้ว/);
+  }
 });
 
 test('quote form opens with one item and adds items incrementally', () => {
