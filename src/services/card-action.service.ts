@@ -131,6 +131,24 @@ export class CardActionService {
     ).run();
   }
 
+  private async completedQuoteDraft(draftId: string): Promise<{ caseId: string; createdBy: string; payload: QuoteDraft } | null> {
+    const row = await this.env.DB.prepare(
+      "SELECT kind,case_id,created_by,payload_json,status FROM interaction_drafts WHERE draft_id=? LIMIT 1",
+    ).bind(draftId).first<UnknownRecord>();
+    if (!row || asString(row.kind) !== "quote" || asString(row.status) !== "COMPLETED") return null;
+    try {
+      const payload: unknown = JSON.parse(asString(row.payload_json, "{}"));
+      if (!isRecord(payload)) return null;
+      return {
+        caseId: asString(row.case_id),
+        createdBy: asString(row.created_by),
+        payload: payload as unknown as QuoteDraft,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async openOrResetQuoteCard(route: CaseRoute, operatorOpenId: string): Promise<void> {
     const root = this.requireRoot(route);
     const card = buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), 1, {});
@@ -266,7 +284,21 @@ export class CardActionService {
           this.requireOwner(route, event.operatorOpenId);
           const draftId = asString(event.value.draft_id);
           const draft = await this.operational.getDraft<QuoteDraft>(draftId);
-          if (!draft || draft.kind !== "quote" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("ใบเสนอราคานี้หมดอายุหรือไม่ถูกต้อง");
+          if (!draft) {
+            const completed = await this.completedQuoteDraft(draftId);
+            if (
+              completed &&
+              completed.caseId === route.case_id &&
+              completed.createdBy === event.operatorOpenId &&
+              event.messageId
+            ) {
+              await this.lark.patchCard(event.messageId, buildQuoteSentCard(completed.payload));
+              await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
+              break;
+            }
+            throw new Error("ใบเสนอราคานี้หมดอายุหรือไม่ถูกต้อง");
+          }
+          if (draft.kind !== "quote" || draft.case_id !== route.case_id || draft.created_by !== event.operatorOpenId) throw new Error("ใบเสนอราคานี้หมดอายุหรือไม่ถูกต้อง");
           const dealRecordId = await this.base.saveQuote({ dealId: `deal:${draft.draft_id}`, route, quote: draft.payload, quotationStatus: "Pending Send" });
           await this.operational.setDealRecord(route.case_id, dealRecordId);
           await pushLineMessages(this.env, route.line_user_id, [quotationFlex(companyName(this.env), await this.customerName(route), draft.payload)], await stableUuid(`quote:${draft.draft_id}`));
