@@ -60,13 +60,15 @@ test('QR public asset supports LINE-friendly GET and HEAD metadata', () => {
   assert.match(source, /request\.method === "HEAD"/);
 });
 
-test('QR encoder normalizes qrcode CommonJS interop for Cloudflare Workers', () => {
-  const source = read('src/routes/assets/qr.route.ts');
-  assert.match(source, /const qrModule = await import\("qrcode"\)/);
-  assert.match(source, /typeof qrModule\.toBuffer === "function" \? qrModule : qrModule\.default/);
-  assert.match(source, /typeof qrEncoder\.toBuffer !== "function"/);
-  assert.match(source, /await qrEncoder\.toBuffer\(/);
-  assert.doesNotMatch(source, /const png = await qr\.toBuffer\(/);
+test('QR encoder uses portable qrcode matrix path and no Node-only toBuffer', () => {
+  const route = read('src/routes/assets/qr.route.ts');
+  const renderer = read('src/utils/qr-png.ts');
+  assert.match(route, /renderQrPng/);
+  assert.match(renderer, /const qrModule = await import\("qrcode"\)/);
+  assert.match(renderer, /resolveCreate\(qrModule\)/);
+  assert.match(renderer, /CompressionStream\("deflate"\)/);
+  assert.doesNotMatch(route, /\.toBuffer\s*\(/);
+  assert.doesNotMatch(renderer, /\.toBuffer\s*\(/);
 });
 
 test('commercial lifecycle floors Quote and Payment and prevents inbound demotion', () => {
