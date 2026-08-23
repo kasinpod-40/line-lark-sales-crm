@@ -2,6 +2,7 @@ import type { Env } from "../../config/env";
 import type { WorkerExecutionContext } from "../../platform/cloudflare";
 import { CardActionService, type CardActionEvent } from "../../services/card-action.service";
 import { PaymentCardActionService, SINGLE_CARD_PAYMENT_ACTIONS } from "../../services/payment-card-action.service";
+import { CommercialLifecycleService } from "../../services/commercial-lifecycle.service";
 import { LarkEventService, type LarkMessageEvent } from "../../services/lark-event.service";
 import { decryptLarkPayload } from "../../providers/lark/lark.client";
 import { asNumber, asString, isRecord, parseJsonRecord, type UnknownRecord } from "../../utils/json";
@@ -82,6 +83,21 @@ export function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
   };
 }
 
+async function handleCardAction(env: Env, event: CardActionEvent): Promise<void> {
+  if (SINGLE_CARD_PAYMENT_ACTIONS.has(event.action)) {
+    await new PaymentCardActionService(env).handle(event);
+    return;
+  }
+
+  await new CardActionService(env).handle(event);
+  const caseId = asString(event.value.case_id).trim();
+  if (caseId) {
+    await new CommercialLifecycleService(env).reconcileCase(caseId).catch((error) => {
+      console.error("COMMERCIAL_LIFECYCLE_RECONCILE_FAILED", error instanceof Error ? error.message : String(error));
+    });
+  }
+}
+
 export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerExecutionContext): Promise<Response> {
   if (request.method !== "POST") return jsonResponse({ ok: false, message: "Method not allowed" }, 405);
 
@@ -152,12 +168,7 @@ export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerE
   }
   if (eventType === "card.action.trigger" || isRecord(body.event) && isRecord(body.event.action)) {
     const event = parseActionEvent(body);
-    if (event) {
-      const actionService = SINGLE_CARD_PAYMENT_ACTIONS.has(event.action)
-        ? new PaymentCardActionService(env)
-        : new CardActionService(env);
-      ctx.waitUntil(actionService.handle(event).catch((error) => console.error("LARK_CARD_ACTION_FAILED", error)));
-    }
+    if (event) ctx.waitUntil(handleCardAction(env, event).catch((error) => console.error("LARK_CARD_ACTION_FAILED", error)));
     // Acknowledge immediately; Base/LINE mutations continue asynchronously.
     return jsonResponse({ toast: { type: "info", content: "กำลังดำเนินการ..." } });
   }
