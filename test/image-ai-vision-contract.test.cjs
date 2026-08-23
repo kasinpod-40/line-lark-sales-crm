@@ -5,31 +5,37 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'src/ai/image-ai.service.ts'), 'utf8');
+const envSource = fs.readFileSync(path.join(root, 'src/config/env.ts'), 'utf8');
+const validation = fs.readFileSync(path.join(root, 'src/config/validation.ts'), 'utf8');
 const wranglerExample = fs.readFileSync(path.join(root, 'wrangler.jsonc.example'), 'utf8');
 
-test('payment-slip vision defaults to OCR-focused Moondream native Workers AI contract', () => {
-  assert.match(source, /@cf\/moondream\/moondream3\.1-9B-A2B/);
-  assert.match(source, /task:\s*["']query["']/);
-  assert.match(source, /image:\s*dataUri/);
-  assert.match(source, /question/);
-  assert.match(source, /stream:\s*false/);
-  assert.match(source, /asString\(value\.answer\)/);
+test('payment-slip image analysis uses the extracted CRM Gemini 2.5 Flash lane', () => {
+  assert.match(source, /gemini-2\.5-flash/);
+  assert.match(source, /generativelanguage\.googleapis\.com\/v1beta\/models/);
+  assert.match(source, /"x-goog-api-key": apiKey/);
+  assert.match(source, /inlineData/);
+  assert.match(source, /mimeType: normalizedMime/);
+  assert.match(source, /data: arrayBufferToBase64\(bytes\)/);
+  assert.match(source, /responseMimeType:\s*"application\/json"/);
+  assert.match(source, /responseJsonSchema:\s*IMAGE_ANALYSIS_JSON_SCHEMA/);
   assert.match(source, /slip_amount/);
-  assert.match(source, /Do not guess unreadable fields/);
+  assert.match(source, /ห้ามใช้เลขบัญชี เลขอ้างอิง วันที่ เวลา หรือข้อมูลใน QR code เป็น slip_amount/);
+  assert.doesNotMatch(source, /env\.AI!?\.run|@cf\/moondream|@cf\/meta\/llama-3\.2-11b-vision-instruct/);
 });
 
-test('legacy Meta vision default is upgraded without requiring local config mutation', () => {
-  assert.match(source, /LEGACY_META_VISION_MODEL/);
-  assert.match(source, /configured === LEGACY_META_VISION_MODEL/);
-  assert.match(source, /return DEFAULT_VISION_MODEL/);
-  assert.match(wranglerExample, /"AI_VISION_MODEL": "@cf\/moondream\/moondream3\.1-9B-A2B"/);
+test('Gemini image secret and model are explicit reusable install configuration', () => {
+  assert.match(envSource, /GEMINI_API_KEY\?: string/);
+  assert.match(envSource, /GEMINI_IMAGE_MODEL\?: string/);
+  assert.match(wranglerExample, /"GEMINI_IMAGE_MODEL": "gemini-2\.5-flash"/);
+  assert.doesNotMatch(wranglerExample, /AI_VISION_MODEL/);
+  assert.match(validation, /gemini_image_ai/);
+  assert.match(validation, /GEMINI_IMAGE_AI_NOT_CONFIGURED/);
 });
 
-test('vision fallback diagnostics never include image bytes or data URI', () => {
+test('Gemini fallback diagnostics never log secret or image bytes', () => {
+  assert.match(source, /provider:\s*"gemini"/);
   assert.match(source, /stage:\s*"vision_inference_or_parse"/);
-  assert.match(source, /model,/);
-  assert.match(source, /message\.slice\(0, 240\)/);
   const fallbackStart = source.indexOf('console.warn("AI_IMAGE_FALLBACK"');
   const fallbackBlock = source.slice(fallbackStart, fallbackStart + 500);
-  assert.doesNotMatch(fallbackBlock, /dataUri|bytes|base64/);
+  assert.doesNotMatch(fallbackBlock, /apiKey|bytes|base64|inlineData/);
 });
