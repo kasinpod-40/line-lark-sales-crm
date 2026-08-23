@@ -21,6 +21,7 @@ export interface DeploymentReadiness {
     operational_state: boolean;
     media: boolean;
     workers_ai: boolean;
+    gemini_image_ai: boolean;
     vip_thresholds_configured: boolean;
   };
 }
@@ -205,7 +206,16 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
       severity: "warning",
       code: "WORKERS_AI_NOT_BOUND",
       key: "AI",
-      message: "Workers AI is not bound; deterministic text rules and safe image fallbacks will be used",
+      message: "Workers AI is not bound; deterministic text rules will be used for text analysis",
+    });
+  }
+
+  if (!hasText(env.GEMINI_API_KEY)) {
+    issues.push({
+      severity: "warning",
+      code: "GEMINI_IMAGE_AI_NOT_CONFIGURED",
+      key: "GEMINI_API_KEY",
+      message: "Gemini image AI is not configured; images will still reach Lark but OCR/slip extraction will use safe fallback",
     });
   }
 
@@ -233,6 +243,7 @@ export function validateDeploymentConfig(env: Env): DeploymentReadiness {
       operational_state: Boolean(env.DB && env.LINE_EVENTS_QUEUE),
       media: Boolean(env.DB && hasText(env.LARK_APP_ID) && hasText(env.LARK_APP_SECRET) && hasText(env.PUBLIC_BASE_URL)),
       workers_ai: Boolean(env.AI),
+      gemini_image_ai: hasText(env.GEMINI_API_KEY),
       vip_thresholds_configured: hasText(env.VIP_GOLD_MIN_THB) || hasText(env.VIP_DIAMOND_MIN_THB),
     },
   };
