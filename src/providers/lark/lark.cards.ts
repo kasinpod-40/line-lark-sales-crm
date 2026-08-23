@@ -7,6 +7,7 @@ import { formatMoney } from "../../utils/money";
 type CardHeaderTemplate = "blue" | "green" | "grey" | "turquoise" | "orange" | "purple";
 type CardButtonType = "default" | "primary" | "danger" | "primary_filled" | "danger_filled";
 type FormValues = Record<string, unknown>;
+export type DraftCardKind = "quote" | "payment" | "close_deal" | "campaign";
 
 function md(content: string): unknown {
   return { tag: "markdown", content };
@@ -306,5 +307,22 @@ export function buildCampaignPreviewCard(caseId: string, draftId: string, campai
       button("ยกเลิก", { action: "cancel_draft", draft_id: draftId }),
     ],
     `${campaign.title} • ${count} LINE users`,
+  );
+}
+
+export function buildCancelledDraftCard(kind: DraftCardKind): unknown {
+  const labels: Record<DraftCardKind, string> = {
+    quote: "ใบเสนอราคา",
+    payment: "QR ชำระเงิน",
+    close_deal: "การปิดการขาย",
+    campaign: "Campaign",
+  };
+  const label = labels[kind];
+  return card(
+    "grey",
+    `⚪ ${label} — ยกเลิกแล้ว`,
+    [md(`รายการ **${label}** นี้ถูกยกเลิกแล้ว\nไม่มีการส่ง LINE และไม่มี action ที่ใช้งานได้ต่อจากการ์ดใบนี้`) ],
+    `${label} ยกเลิกแล้ว`,
+    false,
   );
 }
