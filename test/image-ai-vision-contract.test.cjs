@@ -36,6 +36,8 @@ test('Gemini fallback diagnostics never log secret or image bytes', () => {
   assert.match(source, /provider:\s*"gemini"/);
   assert.match(source, /stage:\s*"vision_inference_or_parse"/);
   const fallbackStart = source.indexOf('console.warn("AI_IMAGE_FALLBACK"');
-  const fallbackBlock = source.slice(fallbackStart, fallbackStart + 500);
+  const fallbackEnd = source.indexOf('}));', fallbackStart);
+  assert.ok(fallbackStart >= 0 && fallbackEnd > fallbackStart, 'fallback diagnostic block must exist');
+  const fallbackBlock = source.slice(fallbackStart, fallbackEnd + 4);
   assert.doesNotMatch(fallbackBlock, /apiKey|bytes|base64|inlineData/);
 });
