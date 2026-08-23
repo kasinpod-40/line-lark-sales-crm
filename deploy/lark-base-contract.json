@@ -141,12 +141,12 @@
         {
           "type": "formula",
           "name": "sla_minutes",
-          "expression": "IF(ISBLANK([sales_reply_time]), \"\", ROUND(DAYS([sales_reply_time], [customer_msg_time]) * 1440, 1))"
+          "expression": "IF(ISBLANK([sales_reply_time]), \"\", ROUND([first_response_seconds] / 60, 1))"
         },
         {
           "type": "formula",
           "name": "sla_status",
-          "expression": "IF(ISBLANK([sales_reply_time]), \"\", IF(DAYS([sales_reply_time], [customer_msg_time]) * 1440 <= 5, \"🟢 Fast (<5m)\", \"🔴 Overdue SLA\"))"
+          "expression": "IF(ISBLANK([sales_reply_time]), \"\", IF([first_response_seconds] <= 300, \"🟢 Fast (<5m)\", \"🔴 Overdue SLA\"))"
         }
       ]
     },
