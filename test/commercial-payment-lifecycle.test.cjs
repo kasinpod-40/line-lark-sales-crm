@@ -89,7 +89,7 @@ test('Lark QR UX remains one active card with requested two-row actions and term
   assert.match(service, /await this\.lark\.patchCard\(previous\.messageId, preview\)/);
 });
 
-test('controlled live repair operators are plan-first and scoped', () => {
+test('controlled live repair operators are plan-first, scoped, and avoid server-side record filters', () => {
   const options = read('scripts/reconcile-lark-base-lifecycle-options.mjs');
   const recovery = read('scripts/recover-failed-qr-case.mjs');
   assert.match(options, /apply: false/);
@@ -100,8 +100,16 @@ test('controlled live repair operators are plan-first and scoped', () => {
 
   assert.match(recovery, /apply: false/);
   assert.match(recovery, /deal_status !== "Open"/);
-  assert.match(recovery, /case_status !== "PAYMENT"/);
+  assert.match(recovery, /\["PAYMENT", "QUOTED"\]/);
   assert.match(recovery, /payment_status/);
   assert.match(recovery, /status='QUOTED'/);
+  assert.match(recovery, /customer_record_id/);
+  assert.match(recovery, /tracking_record_id/);
+  assert.match(recovery, /deal_record_id/);
+  assert.match(recovery, /--output/);
+  assert.match(recovery, /--minimal-stdout/);
+  assert.match(recovery, /--json/);
+  assert.match(recovery, /d1_exact_record_ids_plus_local_ndjson_readback/);
+  assert.doesNotMatch(recovery, /--filter-json/);
   assert.doesNotMatch(recovery, /U[0-9a-f]{20,}/i);
 });
