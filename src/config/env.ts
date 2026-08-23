@@ -11,6 +11,9 @@ export interface Env {
   AI_TEXT_MODEL?: string;
   AI_VISION_MODEL?: string;
 
+  GEMINI_API_KEY?: string;
+  GEMINI_IMAGE_MODEL?: string;
+
   LARK_APP_ID: string;
   LARK_APP_SECRET: string;
   LARK_VERIFICATION_TOKEN: string;
