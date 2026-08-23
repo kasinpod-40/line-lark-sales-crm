@@ -72,30 +72,16 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
     : "🧾 ได้รับรูปในเคสที่อยู่ขั้น **Payment** — กรุณาตรวจว่าเป็นสลิป/หลักฐานการชำระเงินหรือไม่";
   const slipAmountText = hasSlipAmount ? `฿${formatMoney(input.slipAmount ?? 0)}` : "อ่านยอดไม่ได้";
   const comparison = matches
-    ? "✅ **ยอดชำระเงินถูกต้อง — ยอดในสลิปตรงกับยอดที่ต้องชำระ**"
+    ? "✅ **ยอดในสลิปตรงกับยอด Deal**"
     : mismatch
-      ? "❌ **ยอดชำระเงินไม่ตรง — ระบบบล็อกการยืนยันรับชำระจากสลิปนี้**"
-      : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริงก่อนยืนยัน**";
+      ? "⚠️ **ยอดในสลิปไม่ตรงกับยอด Deal — กรุณาตรวจสอบก่อนตัดสินใจ**"
+      : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริง**";
   const bankLine = input.slipBank ? `\nธนาคารที่ AI อ่านได้: **${input.slipBank}**` : "";
-
-  const reviewAction = mismatch
-    ? button(
-        "❌ ยอดไม่ตรง — ไม่รับสลิปนี้",
-        { action: "reject_payment_slip", case_id: input.caseId, slip_verdict: verdict },
-        "danger",
-      )
-    : twoColumns(
-        button(
-          matches ? "✅ ยืนยันรับชำระ" : "✅ ตรวจเองแล้ว ยืนยันรับชำระ",
-          { action: "confirm_slip_payment", case_id: input.caseId, slip_verdict: verdict },
-          "primary_filled",
-        ),
-        button(
-          "❌ ไม่ถูกต้อง",
-          { action: "reject_payment_slip", case_id: input.caseId, slip_verdict: verdict },
-          "danger",
-        ),
-      );
+  const confirmLabel = mismatch
+    ? "⚠️ ตรวจแล้ว ยืนยันรับชำระ"
+    : matches
+      ? "✅ ยืนยันรับชำระ"
+      : "✅ ตรวจเองแล้ว ยืนยันรับชำระ";
 
   return {
     schema: "2.0",
@@ -111,8 +97,19 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
     body: {
       elements: [
         md(`${detection}\n\nยอดที่ต้องชำระ: **฿${formatMoney(input.dealAmount)}**\nยอดในสลิป: **${slipAmountText}**\n${comparison}${bankLine}\nAI confidence: **${confidence}**`),
-        md("**สำคัญ:** AI ช่วยอ่านภาพและเทียบยอดเท่านั้น ไม่ได้ยืนยันธุรกรรมธนาคาร กรุณาตรวจชื่อผู้รับ ยอด และวันเวลาจากสลิปจริงก่อนกดรับชำระ"),
-        reviewAction,
+        md("**สำคัญ:** AI ช่วยอ่านภาพและเทียบยอดเท่านั้น ไม่ได้ยืนยันธุรกรรมธนาคาร การรับชำระเป็นคำตัดสินของ Sales หลังตรวจชื่อผู้รับ ยอด และวันเวลาจากสลิปจริง"),
+        twoColumns(
+          button(
+            confirmLabel,
+            { action: "confirm_slip_payment", case_id: input.caseId, slip_verdict: verdict },
+            "primary_filled",
+          ),
+          button(
+            "❌ ไม่ถูกต้อง",
+            { action: "reject_payment_slip", case_id: input.caseId, slip_verdict: verdict },
+            "danger",
+          ),
+        ),
       ],
     },
   };
