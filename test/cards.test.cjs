@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 const {
   buildCaseCard,
   buildQuoteFormCard,
-  buildQuoteItemCountCard,
   buildPaymentFormCard,
   buildCampaignFormCard,
   buildThreadGuardWarningCard,
@@ -50,6 +49,14 @@ function actionNames(card) {
     }
   });
   return values;
+}
+
+function namedNode(card, name) {
+  let found = null;
+  walk(card.body && card.body.elements, (node) => {
+    if (!found && node.name === name) found = node;
+  });
+  return found;
 }
 
 function cardText(card) {
@@ -112,38 +119,54 @@ test('root-chat guard warning is Card 2.0 and explicitly says message was not se
   assert.match(cardText(card), /Reply in Thread/);
 });
 
-test('quote flow asks item count before opening a long form', () => {
-  const chooser = buildQuoteItemCountCard('case-1');
-  assertCard2(chooser);
-  assert.deepEqual(actionNames(chooser), [
-    'open_quote_form_count',
-    'open_quote_form_count',
-    'open_quote_form_count',
-    'open_quote_form_count',
-    'open_quote_form_count',
-  ]);
-  assert.match(cardText(chooser), /1 รายการ/);
-  assert.match(cardText(chooser), /5 รายการ/);
-});
-
-test('quote form defaults to one item and renders only selected item count', () => {
+test('quote form opens with one item and adds items incrementally', () => {
   const one = buildQuoteFormCard('case-1', 7);
   const three = buildQuoteFormCard('case-1', 7, 3);
+  assert.deepEqual(actionNames(one), ['quote_add_item', 'submit_quote_preview']);
   assert.match(cardText(one), /รายการ 1/);
   assert.doesNotMatch(cardText(one), /รายการ 2/);
+  assert.match(cardText(one), /เพิ่มรายการ/);
   assert.match(cardText(three), /รายการ 1/);
   assert.match(cardText(three), /รายการ 2/);
   assert.match(cardText(three), /รายการ 3/);
   assert.doesNotMatch(cardText(three), /รายการ 4/);
 });
 
+test('quote add-item rebuild preserves submitted values', () => {
+  const card = buildQuoteFormCard('case-1', 7, 2, {
+    quotation_no: 'QT-TEST',
+    item_1_description: 'สินค้า A',
+    item_1_quantity: '3',
+    item_1_unit_price: '1200',
+    discount: '100',
+    vat_rate: '7',
+    shipping_fee: '50',
+    valid_until: '2026-08-31',
+    note: 'ทดสอบ',
+  });
+  assert.equal(namedNode(card, 'quotation_no').default_value, 'QT-TEST');
+  assert.equal(namedNode(card, 'item_1_description').default_value, 'สินค้า A');
+  assert.equal(namedNode(card, 'item_1_quantity').default_value, '3');
+  assert.equal(namedNode(card, 'item_1_unit_price').default_value, '1200');
+  assert.equal(namedNode(card, 'discount').default_value, '100');
+  assert.equal(namedNode(card, 'shipping_fee').default_value, '50');
+  assert.equal(namedNode(card, 'note').default_value, 'ทดสอบ');
+  assert.equal(namedNode(card, 'item_2_quantity').default_value, '1');
+});
+
+test('quote form stops exposing add-item after five items', () => {
+  const five = buildQuoteFormCard('case-1', 7, 5);
+  assert.deepEqual(actionNames(five), ['submit_quote_preview']);
+  assert.doesNotMatch(cardText(five), /เพิ่มรายการ/);
+});
+
 test('Card 2.0 forms use form_action_type submit and callback behavior', () => {
   const cards = [
-    buildQuoteFormCard('case-1', 7),
-    buildPaymentFormCard('case-1', 45000),
-    buildCampaignFormCard('case-1', 'vip'),
+    [buildQuoteFormCard('case-1', 7), 2],
+    [buildPaymentFormCard('case-1', 45000), 1],
+    [buildCampaignFormCard('case-1', 'vip'), 1],
   ];
-  for (const card of cards) {
+  for (const [card, expectedSubmitCount] of cards) {
     assertCard2(card);
     let formCount = 0;
     let submitCount = 0;
@@ -158,6 +181,6 @@ test('Card 2.0 forms use form_action_type submit and callback behavior', () => {
       }
     });
     assert.equal(formCount, 1);
-    assert.equal(submitCount, 1);
+    assert.equal(submitCount, expectedSubmitCount);
   }
 });
