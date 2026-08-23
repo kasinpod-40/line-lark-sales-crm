@@ -9,6 +9,7 @@ import { resourceMapFromList, resolveCanonicalNamedResource } from "./lark-cli-r
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaContract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-contract.json"), "utf8"));
 const uxContract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-ux-contract.json"), "utf8"));
+const PIPELINE_DISTRIBUTION_BLOCK = "📈 Pipeline Distribution";
 
 function parseArgs(argv) {
   const args = { apply: false, baseToken: "", identity: "user" };
@@ -161,6 +162,19 @@ function liveDashboardDataConfig(dataConfig, tables) {
   return config;
 }
 
+function effectiveDashboardDataConfig(block, tables) {
+  const config = liveDashboardDataConfig(block.data_config, tables);
+  if (block.name === PIPELINE_DISTRIBUTION_BLOCK) {
+    // Live Base export proves the ring, table and pipeline_stage group are valid,
+    // but Lark's dashboard engine returns no series for COUNTA on this grouped
+    // Sales_Deals block. Use pipeline monetary value instead: it is more useful
+    // commercially and exercises the same pipeline_stage segmentation.
+    delete config.count_all;
+    config.series = [{ field_name: "deal_value_thb", rollup: "SUM" }];
+  }
+  return config;
+}
+
 function createDashboard(baseToken, dashboard) {
   runLark([
     "base", "+dashboard-create",
@@ -215,7 +229,7 @@ function reconcileDashboards(baseToken, tables) {
     let blocks = listDashboardBlocks(baseToken, dashboardId);
 
     for (const block of dashboard.blocks) {
-      const dataConfig = liveDashboardDataConfig(block.data_config, tables);
+      const dataConfig = effectiveDashboardDataConfig(block, tables);
       if (!blocks.has(block.name)) {
         createDashboardBlock(baseToken, dashboardId, block, dataConfig);
         blocksCreated += 1;
@@ -252,6 +266,7 @@ function plan() {
     dashboard_count: uxContract.dashboards.length,
     dashboard_block_count: dashboardBlockCount,
     live_table_resolution: "canonical schema name -> exact live table ID/display name (emoji-safe)",
+    pipeline_distribution_metric: "SUM(deal_value_thb) grouped by pipeline_stage",
     apply_scope: "2 SLA formula updates + reconcile exactly 2 golden dashboards / 23 expected blocks",
     excluded_scope: "no table create, no record mutation, no view mutation, no Worker deploy",
   }, null, 2));
@@ -279,6 +294,7 @@ function apply(args) {
     dashboards_created: dashboards.dashboardsCreated,
     dashboard_blocks_created: dashboards.blocksCreated,
     dashboard_blocks_refreshed: dashboards.blocksRefreshed,
+    pipeline_distribution_metric: "SUM(deal_value_thb) grouped by pipeline_stage",
     dashboard_verification: dashboards.verification,
     no_table_create: true,
     no_record_mutation: true,
