@@ -17,7 +17,7 @@ test('payment-slip image analysis uses Gemini 3.7 Flash multimodal structured ou
   assert.match(source, /"x-goog-api-key": apiKey/);
   assert.match(source, /inlineData/);
   assert.match(source, /mimeType: normalizedMime/);
-  assert.match(source, /data: arrayBufferToBase64\(bytes\)/);
+  assert.match(source, /data: encodedImage/);
   assert.match(source, /thinkingConfig:\s*\{\s*thinkingLevel:\s*"low"\s*\}/);
   assert.match(source, /responseMimeType:\s*"application\/json"/);
   assert.match(source, /responseJsonSchema:\s*IMAGE_ANALYSIS_JSON_SCHEMA/);
@@ -26,6 +26,15 @@ test('payment-slip image analysis uses Gemini 3.7 Flash multimodal structured ou
   assert.match(source, /ห้ามใช้เลขบัญชี เลขอ้างอิง วันที่ เวลา หรือข้อมูลใน QR code เป็น slip_amount/);
   assert.doesNotMatch(source, /temperature:\s*0|candidateCount|thinkingBudget/);
   assert.doesNotMatch(source, /env\.AI!?\.run|@cf\/moondream|@cf\/meta\/llama-3\.2-11b-vision-instruct/);
+});
+
+test('Gemini image capacity errors retry with 3.6 Flash fallback', () => {
+  assert.match(source, /FALLBACK_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.6-flash"/);
+  assert.match(source, /RETRYABLE_GEMINI_STATUSES\s*=\s*new Set\(\[429, 500, 502, 503, 504\]\)/);
+  assert.match(source, /AI_IMAGE_RETRY/);
+  assert.match(source, /await sleep\(delayMs\)/);
+  assert.match(source, /primaryModel === FALLBACK_GEMINI_IMAGE_MODEL/);
+  assert.match(source, /attempt < 2/);
 });
 
 test('Gemini image secret and current model are explicit reusable install configuration', () => {
