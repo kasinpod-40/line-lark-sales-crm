@@ -166,6 +166,16 @@ function currentSalesId(value) {
   return typeof value[0].id === "string" ? value[0].id.trim() : "";
 }
 
+function assertBatchUpdateAccepted(result, label) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error(`${label} returned invalid JSON result`);
+  }
+  const ignored = Array.isArray(result.ignored_fields) ? result.ignored_fields : [];
+  if (ignored.length) {
+    throw new Error(`${label} ignored ${ignored.length} field write(s); refusing to continue before readback`);
+  }
+}
+
 function backfillTable(baseToken, tableId, label, sourceField, tempDir) {
   const rows = exportRecords(baseToken, tableId, label, sourceField, tempDir);
   const pending = [];
@@ -189,12 +199,13 @@ function backfillTable(baseToken, tableId, label, sourceField, tempDir) {
       recordId,
       { sales: [{ id: ownerId }] },
     ]));
-    runLark([
+    const updateResult = runLark([
       "base", "+record-batch-update",
       "--base-token", baseToken,
       "--table-id", tableId,
       "--json", JSON.stringify({ update_records: updateRecords }),
-    ], `Backfill ${label}.sales batch ${Math.floor(offset / 200) + 1}`);
+    ], `Backfill ${label}.sales batch ${Math.floor(offset / 200) + 1}`, { requireOk: false });
+    assertBatchUpdateAccepted(updateResult, `Backfill ${label}.sales batch ${Math.floor(offset / 200) + 1}`);
   }
 
   const readback = exportRecords(baseToken, tableId, `${label}-readback`, sourceField, tempDir);
