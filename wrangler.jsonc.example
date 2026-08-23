@@ -20,7 +20,7 @@
     "VIP_GOLD_MIN_THB": "",
     "VIP_DIAMOND_MIN_THB": "",
     "AI_TEXT_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
-    "AI_VISION_MODEL": "@cf/meta/llama-3.2-11b-vision-instruct"
+    "AI_VISION_MODEL": "@cf/moondream/moondream3.1-9B-A2B"
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "line-lark-sales-crm", "database_id": "REPLACE_D1_ID" }
