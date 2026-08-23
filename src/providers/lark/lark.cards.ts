@@ -6,6 +6,7 @@ import { formatMoney } from "../../utils/money";
 
 type CardHeaderTemplate = "blue" | "green" | "grey" | "turquoise" | "orange" | "purple";
 type CardButtonType = "default" | "primary" | "danger" | "primary_filled" | "danger_filled";
+type FormValues = Record<string, unknown>;
 
 function md(content: string): unknown {
   return { tag: "markdown", content };
@@ -25,11 +26,16 @@ function button(label: string, value: Record<string, string>, type: CardButtonTy
   };
 }
 
-function submitButton(label: string, name: string, value: Record<string, string>): unknown {
+function submitButton(
+  label: string,
+  name: string,
+  value: Record<string, string>,
+  type: CardButtonType = "primary_filled",
+): unknown {
   return {
     tag: "button",
     text: { tag: "plain_text", content: label },
-    type: "primary_filled",
+    type,
     width: "fill",
     name,
     form_action_type: "submit",
@@ -48,6 +54,13 @@ function input(name: string, placeholder: string, defaultValue = "", required = 
   };
   if (defaultValue) item.default_value = defaultValue;
   return item;
+}
+
+function formDefault(values: FormValues, name: string, fallback = ""): string {
+  const value = values[name];
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
 }
 
 function card(
@@ -134,44 +147,45 @@ export function buildThreadGuardWarningCard(): unknown {
   );
 }
 
-export function buildQuoteItemCountCard(caseId: string): unknown {
-  return card(
-    "blue",
-    "🎨 เลือกจำนวนรายการ",
-    [
-      md("เลือกจำนวนสินค้า/บริการที่จะใส่ในใบเสนอราคา ระบบจะแสดงช่องกรอก **เท่าที่เลือกจริง**"),
-      button("1 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "1" }, "primary_filled"),
-      button("2 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "2" }),
-      button("3 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "3" }),
-      button("4 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "4" }),
-      button("5 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "5" }),
-    ],
-    "เลือกจำนวนรายการสำหรับใบเสนอราคา",
-  );
-}
-
-export function buildQuoteFormCard(caseId: string, defaultVatRate = 7, itemCount = 1): unknown {
+export function buildQuoteFormCard(
+  caseId: string,
+  defaultVatRate = 7,
+  itemCount = 1,
+  values: FormValues = {},
+): unknown {
   const count = Math.max(1, Math.min(5, Math.round(itemCount)));
-  const formElements: unknown[] = [input("quotation_no", "เลขที่ใบเสนอราคา (เว้นว่างให้ระบบตั้งให้)")];
+  const formElements: unknown[] = [
+    input("quotation_no", "เลขที่ใบเสนอราคา (เว้นว่างให้ระบบตั้งให้)", formDefault(values, "quotation_no")),
+  ];
   for (let index = 1; index <= count; index += 1) {
     formElements.push(
       md(`**รายการ ${index}**`),
-      input(`item_${index}_description`, "สินค้า/บริการ", "", index === 1),
-      input(`item_${index}_quantity`, "จำนวน", index === 1 ? "1" : ""),
-      input(`item_${index}_unit_price`, "ราคาต่อหน่วย", "", index === 1),
+      input(`item_${index}_description`, "สินค้า/บริการ", formDefault(values, `item_${index}_description`)),
+      input(`item_${index}_quantity`, "จำนวน", formDefault(values, `item_${index}_quantity`, "1")),
+      input(`item_${index}_unit_price`, "ราคาต่อหน่วย", formDefault(values, `item_${index}_unit_price`)),
+    );
+  }
+  if (count < 5) {
+    formElements.push(
+      submitButton(
+        "➕ เพิ่มรายการ",
+        "quote_add_item",
+        { action: "quote_add_item", case_id: caseId, item_count: String(count) },
+        "default",
+      ),
     );
   }
   formElements.push(
-    input("discount", "ส่วนลด", "0"),
-    input("vat_rate", "VAT %", String(defaultVatRate)),
-    input("shipping_fee", "ค่าจัดส่ง", "0"),
-    input("valid_until", "ใช้ได้ถึง เช่น 2026-08-31"),
-    input("note", "หมายเหตุ"),
+    input("discount", "ส่วนลด", formDefault(values, "discount", "0")),
+    input("vat_rate", "VAT %", formDefault(values, "vat_rate", String(defaultVatRate))),
+    input("shipping_fee", "ค่าจัดส่ง", formDefault(values, "shipping_fee", "0")),
+    input("valid_until", "ใช้ได้ถึง เช่น 2026-08-31", formDefault(values, "valid_until")),
+    input("note", "หมายเหตุ", formDefault(values, "note")),
     submitButton("ดูตัวอย่างใบเสนอราคา", "submit_quote_preview", { action: "submit_quote_preview", case_id: caseId }),
   );
   return card(
     "blue",
-    `🎨 กรอกใบเสนอราคา • ${count} รายการ`,
+    "🎨 กรอกใบเสนอราคา",
     [{ tag: "form", name: "quote_form", elements: formElements }],
     `กรอกใบเสนอราคา ${count} รายการและตรวจสอบก่อนส่ง LINE`,
   );
