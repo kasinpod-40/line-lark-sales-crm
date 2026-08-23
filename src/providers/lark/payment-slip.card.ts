@@ -10,6 +10,7 @@ export interface PaymentSlipReviewCardInput {
 }
 
 type ButtonType = "primary_filled" | "danger";
+type SlipVerdict = "match" | "mismatch" | "manual_review";
 
 function md(content: string): unknown {
   return { tag: "markdown", content };
@@ -61,6 +62,7 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
   const hasSlipAmount = typeof input.slipAmount === "number" && Number.isFinite(input.slipAmount) && input.slipAmount >= 0;
   const matches = hasSlipAmount && input.dealAmount > 0 && Math.abs((input.slipAmount ?? 0) - input.dealAmount) <= 0.01;
   const mismatch = hasSlipAmount && input.dealAmount > 0 && !matches;
+  const verdict: SlipVerdict = matches ? "match" : mismatch ? "mismatch" : "manual_review";
   const confidence = typeof input.confidence === "number" && Number.isFinite(input.confidence)
     ? `${Math.round(Math.max(0, Math.min(1, input.confidence)) * 100)}%`
     : "-";
@@ -72,9 +74,28 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
   const comparison = matches
     ? "✅ **ยอดชำระเงินถูกต้อง — ยอดในสลิปตรงกับยอดที่ต้องชำระ**"
     : mismatch
-      ? "❌ **ยอดชำระเงินไม่ตรง — กรุณาตรวจสอบก่อนยืนยัน**"
-      : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริง**";
+      ? "❌ **ยอดชำระเงินไม่ตรง — ระบบบล็อกการยืนยันรับชำระจากสลิปนี้**"
+      : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริงก่อนยืนยัน**";
   const bankLine = input.slipBank ? `\nธนาคารที่ AI อ่านได้: **${input.slipBank}**` : "";
+
+  const reviewAction = mismatch
+    ? button(
+        "❌ ยอดไม่ตรง — ไม่รับสลิปนี้",
+        { action: "reject_payment_slip", case_id: input.caseId, slip_verdict: verdict },
+        "danger",
+      )
+    : twoColumns(
+        button(
+          matches ? "✅ ยืนยันรับชำระ" : "✅ ตรวจเองแล้ว ยืนยันรับชำระ",
+          { action: "confirm_slip_payment", case_id: input.caseId, slip_verdict: verdict },
+          "primary_filled",
+        ),
+        button(
+          "❌ ไม่ถูกต้อง",
+          { action: "reject_payment_slip", case_id: input.caseId, slip_verdict: verdict },
+          "danger",
+        ),
+      );
 
   return {
     schema: "2.0",
@@ -91,10 +112,7 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
       elements: [
         md(`${detection}\n\nยอดที่ต้องชำระ: **฿${formatMoney(input.dealAmount)}**\nยอดในสลิป: **${slipAmountText}**\n${comparison}${bankLine}\nAI confidence: **${confidence}**`),
         md("**สำคัญ:** AI ช่วยอ่านภาพและเทียบยอดเท่านั้น ไม่ได้ยืนยันธุรกรรมธนาคาร กรุณาตรวจชื่อผู้รับ ยอด และวันเวลาจากสลิปจริงก่อนกดรับชำระ"),
-        twoColumns(
-          button("✅ ยืนยันรับชำระ", { action: "confirm_slip_payment", case_id: input.caseId }, "primary_filled"),
-          button("❌ ไม่ถูกต้อง", { action: "reject_payment_slip", case_id: input.caseId }, "danger"),
-        ),
+        reviewAction,
       ],
     },
   };
