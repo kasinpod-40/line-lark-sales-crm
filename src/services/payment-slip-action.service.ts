@@ -42,6 +42,7 @@ export class PaymentSlipActionService {
       let route = await this.operational.getCase(caseId);
       if (!route) throw new Error("ไม่พบเคสนี้");
       if (route.status === "RESOLVED") throw new Error("เคสนี้ปิดแล้ว");
+      if (route.status !== "PAYMENT") throw new Error("การ์ดตรวจสลิปนี้ใช้ได้เฉพาะเคสที่อยู่ขั้น Payment");
       if (!route.owner_open_id) throw new Error("กรุณารับเคสก่อนตรวจสลิป");
       if (route.owner_open_id !== event.operatorOpenId) {
         throw new Error(`Action นี้ทำได้โดย Case Owner (${route.owner_name ?? "Sales"}) เท่านั้น`);
