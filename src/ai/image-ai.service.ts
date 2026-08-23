@@ -2,6 +2,9 @@ import type { Env } from "../config/env";
 import type { ImageAnalysisResult } from "./ai.types";
 import { asNumber, asString, isRecord } from "../utils/json";
 
+const LEGACY_META_VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+const DEFAULT_VISION_MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+
 function arrayBufferToBase64(bytes: ArrayBuffer): string {
   const data = new Uint8Array(bytes);
   let binary = "";
@@ -15,7 +18,7 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
 function extractText(value: unknown): string {
   if (typeof value === "string") return value;
   if (!isRecord(value)) return "";
-  const direct = asString(value.response) || asString(value.result) || asString(value.text);
+  const direct = asString(value.answer) || asString(value.response) || asString(value.result) || asString(value.text);
   if (direct) return direct;
   if (Array.isArray(value.choices)) {
     const first = value.choices[0];
@@ -24,31 +27,67 @@ function extractText(value: unknown): string {
   return "";
 }
 
+function resolveVisionModel(env: Env): string {
+  const configured = env.AI_VISION_MODEL?.trim();
+  // The old reusable install template pointed at Llama 3.2 Vision, which needs
+  // a per-account Meta license bootstrap before first use. Existing installs
+  // should not silently keep falling back just because they retained that old
+  // default, so upgrade that exact legacy value to the OCR-focused model.
+  if (!configured || configured === LEGACY_META_VISION_MODEL) return DEFAULT_VISION_MODEL;
+  return configured;
+}
+
+function promptForSlipExtraction(): string {
+  return [
+    "Inspect this image for a Thai LINE sales CRM.",
+    "Return exactly one JSON object and no markdown.",
+    "Use keys image_type, summary, slip_amount, slip_bank, confidence.",
+    "image_type must be payment_slip, product_image, other_image, or unknown.",
+    "If this is a Thai bank transfer/payment slip, classify it as payment_slip.",
+    "Read the actual transferred amount printed on the slip as slip_amount, using a JSON number.",
+    "Read the bank name as slip_bank only when visible.",
+    "summary must be concise Thai.",
+    "confidence must be a number from 0 to 1.",
+    "Do not guess unreadable fields and do not treat QR payload data, account numbers, transaction IDs, or dates as the payment amount.",
+  ].join(" ");
+}
+
+async function runVisionModel(env: Env, model: string, dataUri: string): Promise<unknown> {
+  const question = promptForSlipExtraction();
+
+  if (model === DEFAULT_VISION_MODEL) {
+    // Moondream 3.1 native Workers AI contract. It is optimized for OCR and
+    // structured visual queries and returns the query result in `answer`.
+    return env.AI!.run(model, {
+      task: "query",
+      image: dataUri,
+      question,
+      reasoning: false,
+      stream: false,
+      temperature: 0.1,
+      max_tokens: 500,
+    });
+  }
+
+  // Keep an explicit custom-model lane for installations that intentionally
+  // select another compatible multimodal text-generation model.
+  return env.AI!.run(model, {
+    messages: [
+      { role: "system", content: "You extract payment-slip facts accurately and return strict JSON." },
+      { role: "user", content: question },
+    ],
+    image: dataUri,
+    max_tokens: 500,
+    temperature: 0.1,
+  });
+}
+
 export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: string): Promise<ImageAnalysisResult> {
   if (!env.AI) return { image_type: "unknown", summary: "ลูกค้าส่งรูปภาพ", confidence: 0 };
+  const model = resolveVisionModel(env);
   try {
-    const model = env.AI_VISION_MODEL?.trim() || "@cf/meta/llama-3.2-11b-vision-instruct";
     const dataUri = `data:${mimeType};base64,${arrayBufferToBase64(bytes)}`;
-    const prompt = [
-      "Analyze this image for a Thai LINE sales CRM.",
-      "Return one JSON object only, with no markdown.",
-      "Fields: image_type payment_slip|product_image|other_image|unknown; summary Thai; slip_amount number only when visibly readable; slip_bank string only when visibly readable; confidence 0-1.",
-      "For a Thai bank transfer/payment slip, classify image_type as payment_slip and carefully read the transferred amount shown on the slip.",
-      "Do not guess unreadable payment data and do not treat QR payload text as the transferred amount.",
-    ].join(" ");
-
-    // Workers AI native vision contract: the image is a top-level input. Do not
-    // use OpenAI-style image_url blocks here; that shape can be accepted by an
-    // OpenAI-compatible endpoint but is not the binding contract for this model.
-    const output = await env.AI.run(model, {
-      messages: [
-        { role: "system", content: "You extract payment-slip facts accurately and return strict JSON." },
-        { role: "user", content: prompt },
-      ],
-      image: dataUri,
-      max_tokens: 350,
-      temperature: 0.1,
-    });
+    const output = await runVisionModel(env, model, dataUri);
     const text = extractText(output).replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
@@ -68,7 +107,12 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
       confidence: Math.max(0, Math.min(1, asNumber(parsed.confidence, 0.7))),
     };
   } catch (error) {
-    console.warn("AI_IMAGE_FALLBACK", error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("AI_IMAGE_FALLBACK", JSON.stringify({
+      stage: "vision_inference_or_parse",
+      model,
+      error: message.slice(0, 240),
+    }));
     return { image_type: "unknown", summary: "ลูกค้าส่งรูปภาพ", confidence: 0 };
   }
 }
