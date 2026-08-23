@@ -122,7 +122,9 @@ test('formula dependency order is explicit and uses current Lark formula syntax'
     'Customers.total_spend_thb',
   ]);
   const expressions = contract.tables.flatMap((item) => item.deferred_fields || []).map((field) => field.expression);
-  assert.ok(expressions.some((value) => value.includes('DAYS([sales_reply_time], [customer_msg_time])')));
+  assert.ok(expressions.some((value) => value.includes('ROUND([first_response_seconds] / 60, 1)')));
+  assert.ok(expressions.some((value) => value.includes('[first_response_seconds] <= 300')));
+  assert.ok(expressions.every((value) => !value.includes('DAYS([sales_reply_time], [customer_msg_time])')));
   assert.ok(expressions.some((value) => value.includes('[deal_status] = "Closed Won 🏆"')));
   assert.ok(expressions.some((value) => value.includes('[Sales_Deals].FILTER(') && value.includes('.SUM()')));
   assert.ok(expressions.every((value) => !value.includes('==')));
