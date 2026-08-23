@@ -54,6 +54,7 @@ function parseSupportedMessageEvent(destination: string, event: unknown): LineEv
 }
 
 export async function handleLineWebhook(request: Request, env: Env): Promise<Response> {
+  const startedAt = Date.now();
   if (request.method !== "POST") return jsonResponse({ ok: false, message: "Method not allowed" }, 405);
   const rawBody = await request.text();
   const signature = request.headers.get("x-line-signature") ?? "";
@@ -64,11 +65,28 @@ export async function handleLineWebhook(request: Request, env: Env): Promise<Res
   const events = Array.isArray(body.events) ? body.events : [];
   const destination = asString(body.destination).trim();
   const messages = events.map((event) => parseSupportedMessageEvent(destination, event)).filter((event): event is LineEventQueueMessage => event !== null);
+  const queueStartedAt = Date.now();
   try {
-    for (const event of messages) await enqueueLineEvent(env, event);
+    await Promise.all(messages.map((event) => enqueueLineEvent(env, event)));
   } catch (error) {
-    console.error("LINE_WEBHOOK_QUEUE_SEND_FAILED", error instanceof Error ? error.message : String(error));
+    console.error("LINE_WEBHOOK_QUEUE_SEND_FAILED", JSON.stringify({
+      error: error instanceof Error ? error.message : String(error),
+      enqueued_events: messages.length,
+      queue_ms: Date.now() - queueStartedAt,
+      total_ms: Date.now() - startedAt,
+    }));
     return jsonResponse({ ok: false, message: "Queue unavailable" }, 503);
   }
+
+  const timing = {
+    received_events: events.length,
+    enqueued_events: messages.length,
+    redelivery_events: messages.filter((event) => event.is_redelivery).length,
+    queue_ms: Date.now() - queueStartedAt,
+    total_ms: Date.now() - startedAt,
+  };
+  if (timing.total_ms > 1500) console.warn("LINE_WEBHOOK_SLOW", JSON.stringify(timing));
+  else console.log("LINE_WEBHOOK_ENQUEUED", JSON.stringify(timing));
+
   return jsonResponse({ ok: true, received_events: events.length, enqueued_events: messages.length });
 }
