@@ -47,9 +47,6 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
 
 function resolveGeminiImageModel(env: Env): string {
   const configured = env.GEMINI_IMAGE_MODEL?.trim();
-  // Existing installs may still carry the retired 2.5 Flash value. Upgrade that
-  // exact legacy default automatically so deployment does not depend on a local
-  // wrangler variable being edited by hand.
   if (!configured || configured === LEGACY_GEMINI_IMAGE_MODEL) return DEFAULT_GEMINI_IMAGE_MODEL;
   return configured;
 }
@@ -144,12 +141,8 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
           generationConfig: {
             maxOutputTokens: 768,
             thinkingConfig: { thinkingLevel: "low" },
-            responseFormat: {
-              text: {
-                mimeType: "application/json",
-                schema: IMAGE_ANALYSIS_JSON_SCHEMA,
-              },
-            },
+            responseMimeType: "application/json",
+            responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
           },
         }),
       },
