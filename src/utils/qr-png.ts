@@ -33,7 +33,10 @@ function getCrcTable(): Uint32Array {
 function crc32(bytes: Uint8Array): number {
   const table = getCrcTable();
   let crc = 0xffffffff;
-  for (const byte of bytes) crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  for (const byte of bytes) {
+    const entry = table[(crc ^ byte) & 0xff] ?? 0;
+    crc = entry ^ (crc >>> 8);
+  }
   return (crc ^ 0xffffffff) >>> 0;
 }
 
@@ -63,7 +66,9 @@ function pngChunk(type: string, data: Uint8Array): Uint8Array {
 }
 
 async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
-  const body = new Response(bytes).body;
+  const input = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(input).set(bytes);
+  const body = new Response(input).body;
   if (!body) throw new Error("Unable to create QR PNG compression stream");
   const compressed = body.pipeThrough(new CompressionStream("deflate"));
   return new Uint8Array(await new Response(compressed).arrayBuffer());
