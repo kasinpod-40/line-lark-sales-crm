@@ -18,6 +18,7 @@ test('reporting reconcile plan is zero-mutation and covers SLA plus both golden 
   assert.deepEqual(result.sla_formulas.map((field) => field.name).sort(), ['sla_minutes', 'sla_status']);
   assert.equal(result.dashboard_count, 2);
   assert.equal(result.dashboard_block_count, 23);
+  assert.equal(result.pipeline_distribution_metric, 'SUM(deal_value_thb) grouped by pipeline_stage');
   assert.match(result.live_table_resolution, /exact live table ID\/display name/);
   assert.match(result.excluded_scope, /no view mutation/);
 });
@@ -41,4 +42,11 @@ test('reporting reconcile is emoji-safe and scopes mutation to SLA formulas plus
   assert.match(source, /no_worker_deploy:\s*true/);
   assert.doesNotMatch(source, /provision-lark-base-ux\.mjs/);
   assert.doesNotMatch(source, /\+table-create|wrangler deploy|DELETE FROM|INSERT INTO/);
+});
+
+test('pipeline distribution bypasses the live COUNTA rendering gap with deal value SUM', () => {
+  assert.match(source, /PIPELINE_DISTRIBUTION_BLOCK = "📈 Pipeline Distribution"/);
+  assert.match(source, /delete config\.count_all/);
+  assert.match(source, /field_name: "deal_value_thb", rollup: "SUM"/);
+  assert.match(source, /grouped by pipeline_stage/);
 });
