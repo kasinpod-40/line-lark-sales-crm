@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resourceMapFromList, resolveCanonicalNamedResource } from "./lark-cli-resource-list.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const contract = JSON.parse(readFileSync(resolve(__dirname, "../deploy/lark-base-contract.json"), "utf8"));
@@ -15,7 +16,7 @@ function parseArgs(argv) {
     if (arg === "--apply") out.apply = true;
     else if (arg === "--base-token") out.baseToken = argv[++i] || "";
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node scripts/reconcile-lark-base-lifecycle-options.mjs [--apply] --base-token <token>\nDefault is read-only plan. Apply updates only Customers.customer_stage and Sales_Deals.pipeline_stage from the canonical contract.");
+      console.log("Usage: node scripts/reconcile-lark-base-lifecycle-options.mjs [--apply] --base-token <token>\nDefault is read-only plan. Apply updates only Customers.customer_stage and Sales_Deals.pipeline_stage from the canonical contract. Live emoji-prefixed table names are resolved to exact IDs first.");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -79,6 +80,27 @@ function fieldFromPayload(payload, expectedName) {
   return null;
 }
 
+function listTables(baseToken) {
+  return resourceMapFromList(
+    runLark(["base", "+table-list", "--base-token", baseToken], "List live Base tables"),
+    { collectionKeys: ["tables", "items"], nameKeys: ["name", "table_name"], idKeys: ["id", "table_id"], label: "table" },
+  );
+}
+
+function listFields(baseToken, tableId, tableLabel) {
+  return resourceMapFromList(
+    runLark(["base", "+field-list", "--base-token", baseToken, "--table-id", tableId], `List fields ${tableLabel}`),
+    { collectionKeys: ["fields", "items"], nameKeys: ["name", "field_name"], idKeys: ["id", "field_id"], label: "field" },
+  );
+}
+
+function requireField(fields, fieldName, tableLabel) {
+  const meta = fields.get(fieldName);
+  const id = String(meta?.id || "").trim();
+  if (!meta || !id) throw new Error(`Could not resolve exact field ${tableLabel}.${fieldName} with concrete id`);
+  return { id, displayName: fieldName };
+}
+
 function selectDefinition(tableName, fieldName) {
   const table = contract.tables.find((item) => item.name === tableName);
   const field = table?.fields?.find((item) => item.name === fieldName);
@@ -111,42 +133,55 @@ const targets = [
 const args = parseArgs(process.argv.slice(2));
 verifyAuth();
 
+const liveTables = listTables(args.baseToken);
 const plan = [];
 for (const target of targets) {
+  const table = resolveCanonicalNamedResource(liveTables, target.table, "table");
+  const fields = listFields(args.baseToken, table.id, table.displayName);
+  const field = requireField(fields, target.field, table.displayName);
   const desired = selectDefinition(target.table, target.field);
   const beforePayload = runLark([
     "base", "+field-get",
     "--base-token", args.baseToken,
-    "--table-id", target.table,
-    "--field-id", target.field,
-  ], `Read ${target.table}.${target.field}`);
+    "--table-id", table.id,
+    "--field-id", field.id,
+  ], `Read ${table.displayName}.${target.field}`);
   const before = fieldFromPayload(beforePayload, target.field);
-  if (!before) throw new Error(`Could not resolve field ${target.table}.${target.field}`);
+  if (!before) throw new Error(`Could not resolve field payload ${table.displayName}.${target.field}`);
   const currentNames = optionNames(before);
   const desiredNames = desired.options.map((option) => option.name);
   const needsUpdate = !sameArray(currentNames, desiredNames);
-  plan.push({ table: target.table, field: target.field, current: currentNames, desired: desiredNames, needs_update: needsUpdate });
+  plan.push({
+    table: target.table,
+    live_table_name: table.displayName,
+    table_id: table.id,
+    field: target.field,
+    field_id: field.id,
+    current: currentNames,
+    desired: desiredNames,
+    needs_update: needsUpdate,
+  });
 
   if (args.apply && needsUpdate) {
     runLark([
       "base", "+field-update",
       "--base-token", args.baseToken,
-      "--table-id", target.table,
-      "--field-id", target.field,
+      "--table-id", table.id,
+      "--field-id", field.id,
       "--json", JSON.stringify(desired),
       "--yes",
-    ], `Update ${target.table}.${target.field}`);
+    ], `Update ${table.displayName}.${target.field}`);
 
     const afterPayload = runLark([
       "base", "+field-get",
       "--base-token", args.baseToken,
-      "--table-id", target.table,
-      "--field-id", target.field,
-    ], `Verify ${target.table}.${target.field}`);
+      "--table-id", table.id,
+      "--field-id", field.id,
+    ], `Verify ${table.displayName}.${target.field}`);
     const after = fieldFromPayload(afterPayload, target.field);
     const afterNames = optionNames(after);
     if (!sameArray(afterNames, desiredNames)) {
-      throw new Error(`Readback mismatch ${target.table}.${target.field}: ${JSON.stringify(afterNames)}`);
+      throw new Error(`Readback mismatch ${table.displayName}.${target.field}: ${JSON.stringify(afterNames)}`);
     }
   }
 }
@@ -156,5 +191,6 @@ console.log(JSON.stringify({
   mode: args.apply ? "apply" : "plan",
   contract_version: contract.contract_version,
   mutation_count: args.apply ? plan.filter((item) => item.needs_update).length : 0,
+  live_table_resolution: "exact_id_from_table_list",
   targets: plan,
 }, null, 2));
