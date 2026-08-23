@@ -155,13 +155,17 @@ export function buildQuoteFormCard(
 ): unknown {
   const count = Math.max(1, Math.min(5, Math.round(itemCount)));
   const formElements: unknown[] = [
-    input("quotation_no", "เลขที่ใบเสนอราคา (เว้นว่างให้ระบบตั้งให้)", formDefault(values, "quotation_no")),
+    md("**เลขที่ใบเสนอราคา**"),
+    input("quotation_no", "เว้นว่างให้ระบบตั้งให้", formDefault(values, "quotation_no")),
   ];
   for (let index = 1; index <= count; index += 1) {
     formElements.push(
       md(`**รายการ ${index}**`),
-      input(`item_${index}_description`, "สินค้า/บริการ", formDefault(values, `item_${index}_description`)),
+      md("สินค้า/บริการ"),
+      input(`item_${index}_description`, "ชื่อสินค้า/บริการ", formDefault(values, `item_${index}_description`)),
+      md("จำนวน"),
       input(`item_${index}_quantity`, "จำนวน", formDefault(values, `item_${index}_quantity`, "1")),
+      md("ราคาต่อหน่วย (บาท)"),
       input(`item_${index}_unit_price`, "ราคาต่อหน่วย", formDefault(values, `item_${index}_unit_price`)),
     );
   }
@@ -176,10 +180,15 @@ export function buildQuoteFormCard(
     );
   }
   formElements.push(
+    md("**ส่วนลด (บาท)**"),
     input("discount", "ส่วนลด", formDefault(values, "discount", "0")),
+    md("**VAT (%)**"),
     input("vat_rate", "VAT %", formDefault(values, "vat_rate", String(defaultVatRate))),
+    md("**ค่าจัดส่ง (บาท)**"),
     input("shipping_fee", "ค่าจัดส่ง", formDefault(values, "shipping_fee", "0")),
-    input("valid_until", "ใช้ได้ถึง เช่น 2026-08-31", formDefault(values, "valid_until")),
+    md("**ใช้ได้ถึง**"),
+    input("valid_until", "เช่น 2026-08-31", formDefault(values, "valid_until")),
+    md("**หมายเหตุ**"),
     input("note", "หมายเหตุ", formDefault(values, "note")),
     submitButton("ดูตัวอย่างใบเสนอราคา", "submit_quote_preview", { action: "submit_quote_preview", case_id: caseId }),
   );
