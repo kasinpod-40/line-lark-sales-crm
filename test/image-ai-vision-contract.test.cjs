@@ -10,7 +10,7 @@ const envSource = fs.readFileSync(path.join(root, 'src/config/env.ts'), 'utf8');
 const validation = fs.readFileSync(path.join(root, 'src/config/validation.ts'), 'utf8');
 const wranglerExample = fs.readFileSync(path.join(root, 'wrangler.jsonc.example'), 'utf8');
 
-test('payment-slip image analysis uses Gemini multimodal structured output with low thinking', () => {
+test('payment-slip image analysis uses Gemini multimodal structured output with minimal thinking on 3.6', () => {
   assert.match(source, /DEFAULT_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.6-flash"/);
   assert.match(source, /FALLBACK_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.7-flash"/);
   assert.match(source, /LEGACY_GEMINI_IMAGE_MODEL\s*=\s*"gemini-2\.5-flash"/);
@@ -20,7 +20,10 @@ test('payment-slip image analysis uses Gemini multimodal structured output with 
   assert.match(source, /inlineData/);
   assert.match(source, /mimeType: normalizedMime/);
   assert.match(source, /data: encodedImage/);
-  assert.match(source, /thinkingConfig:\s*\{\s*thinkingLevel:\s*"low"\s*\}/);
+  assert.match(source, /function thinkingLevelForModel\(model: string\): "minimal" \| "low"/);
+  assert.match(source, /model === FALLBACK_GEMINI_IMAGE_MODEL \? "low" : "minimal"/);
+  assert.match(source, /thinkingConfig:\s*\{\s*thinkingLevel:\s*thinkingLevelForModel\(model\)\s*\}/);
+  assert.match(source, /maxOutputTokens:\s*256/);
   assert.match(source, /responseMimeType:\s*"application\/json"/);
   assert.match(source, /responseJsonSchema:\s*IMAGE_ANALYSIS_JSON_SCHEMA/);
   assert.doesNotMatch(source, /responseFormat:\s*\{/);
