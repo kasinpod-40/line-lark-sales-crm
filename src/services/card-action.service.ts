@@ -15,6 +15,7 @@ import {
   buildQuoteFormCard,
   buildQuotePreviewCard,
 } from "../providers/lark/lark.cards";
+import { buildQuoteSentCard } from "../providers/lark/quote-terminal.card";
 import { LarkClient } from "../providers/lark/lark.client";
 import { paymentConfirmationFlex, paymentFlex, quotationFlex } from "../providers/line/line.flex";
 import { getLineUserProfile, pushLineMessages, type LineImageMessage } from "../providers/line/line.provider";
@@ -274,7 +275,12 @@ export class CardActionService {
           route = await this.operational.setCaseStatus(route.case_id, "QUOTED");
           await this.base.upsertCaseTracking(route);
           await this.operational.finishDraft(draft.draft_id);
-          if (event.messageId) await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
+          if (event.messageId) {
+            await this.lark.patchCard(event.messageId, buildQuoteSentCard(draft.payload)).catch((error) => {
+              console.warn("QUOTE_SENT_CARD_PATCH_FAILED", error instanceof Error ? error.message : String(error));
+            });
+            await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
+          }
           await this.refreshRoot(route, { dealAmount: draft.payload.total_amount });
           await this.lark.replyText(root, `✅ บันทึก ${draft.payload.quotation_no} และส่ง LINE แล้ว • ฿${draft.payload.total_amount.toLocaleString("th-TH")}`);
           break;
