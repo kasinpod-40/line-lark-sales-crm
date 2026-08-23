@@ -1,6 +1,7 @@
 import type { Env } from "../../config/env";
 import type { WorkerExecutionContext } from "../../platform/cloudflare";
 import { CardActionService, type CardActionEvent } from "../../services/card-action.service";
+import { PaymentCardActionService, SINGLE_CARD_PAYMENT_ACTIONS } from "../../services/payment-card-action.service";
 import { LarkEventService, type LarkMessageEvent } from "../../services/lark-event.service";
 import { decryptLarkPayload } from "../../providers/lark/lark.client";
 import { asNumber, asString, isRecord, parseJsonRecord, type UnknownRecord } from "../../utils/json";
@@ -151,7 +152,12 @@ export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerE
   }
   if (eventType === "card.action.trigger" || isRecord(body.event) && isRecord(body.event.action)) {
     const event = parseActionEvent(body);
-    if (event) ctx.waitUntil(new CardActionService(env).handle(event).catch((error) => console.error("LARK_CARD_ACTION_FAILED", error)));
+    if (event) {
+      const actionService = SINGLE_CARD_PAYMENT_ACTIONS.has(event.action)
+        ? new PaymentCardActionService(env)
+        : new CardActionService(env);
+      ctx.waitUntil(actionService.handle(event).catch((error) => console.error("LARK_CARD_ACTION_FAILED", error)));
+    }
     // Acknowledge immediately; Base/LINE mutations continue asynchronously.
     return jsonResponse({ toast: { type: "info", content: "กำลังดำเนินการ..." } });
   }
