@@ -4,7 +4,7 @@ Last updated: 2026-08-23 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR ONE-CARD PREVIEW LIVE-PASSED / WORKERS-PORTABLE QR PNG FIX VERIFIED IN CI #274 / NEXT STEP IS DEPLOY ONLY AND RETRY THE SAME ACTIVE QR PREVIEW CARD.**
+**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR ONE-CARD + EMBEDDED LINE FLEX LIVE-PASSED / CUSTOMER + CASE PAYMENT LIFECYCLE LIVE-PASSED / NEXT STEP IS SALES_DEALS READBACK THEN PAYMENT/CLOSED-WON E2E.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only. PR #1 remains Draft / Open / Unmerged until the remaining controlled E2E acceptance is complete.
 
@@ -31,7 +31,7 @@ Dedicated Cloudflare resources:
 Worker URL:
 `https://line-lark-sales-crm.kasinpod40.workers.dev`
 
-Latest live `/health` after lifecycle recovery/deploy:
+Latest live `/health` after portable QR PNG deployment:
 - HTTP 200
 - `ok=true`
 - `configuration.ready=true`
@@ -79,9 +79,22 @@ Presentation authority from latest exported `.base`:
    - one orange preview card
    - row 1 full-width `✅ ยืนยันสร้าง + ส่ง LINE`
    - row 2 `✏️ แก้ไขยอดเงิน` | `❌ ยกเลิก`
-   - amount ฿32,100
+   - amount ฿32,100.
+10. QR delivery — PASS live after the portable PNG renderer deployment:
+   - same Lark QR preview card became green terminal/no actions
+   - Thread emitted success confirmation for ฿32,100
+   - LINE received one PromptPay Flex Card with a visible QR embedded inside the card
+   - no separate image message / grey placeholder in the successful retry.
+11. Customer payment lifecycle — PASS visually after QR success:
+   - `customer_stage = 💳 Payment Pending`
+   - `lead_quality = 🔥 Hot Lead`
+   - `lead_score = 80`
+   - existing `total_spend_thb = 0` remains correct while deal is not Closed Won.
+12. CASE payment lifecycle — PASS visually after QR success:
+   - CASE row `case_status = PAYMENT`
+   - CASE row `lead_quality = 🔥 Hot Lead`.
 
-Still not accepted: QR LINE embedded image success, burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, payment/Closed Won, campaigns/retry/cross-route concurrency.
+Still not accepted: Sales_Deals post-QR readback (`pipeline_stage = Payment Pending`, `payment_status = QR Sent`), burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, payment confirmation/Closed Won, campaigns/retry/cross-route concurrency.
 
 ## Canonical commercial lifecycle — locked
 
@@ -106,9 +119,9 @@ The controlled schema reconciliation already succeeded on the golden Base:
 - Sales_Deals `pipeline_stage`: `Payment Pending` added.
 - mutation_count=2 with readback.
 
-The failed old QR state was recovered to the last verified quoted state and Worker health subsequently returned ready=true. Do not rerun schema reconciliation merely because of later QR-render failures.
+The failed old QR state was recovered to the last verified quoted state before the corrected QR retry. Do not rerun schema reconciliation or old failed-QR recovery merely because of historical error messages still visible in the Thread.
 
-## QR contract — corrected and locked
+## QR contract — corrected and live-proven
 
 The old two-message design (PromptPay Flex + separate LINE image message) is retired for the active QR flow.
 
@@ -121,19 +134,22 @@ Correct QR behavior:
 4. Cancel → grey terminal, no actions.
 5. Confirm creates the D1 QR asset and renders the exact QR route locally before any payment advancement.
 6. QR PNG endpoint supports GET + HEAD with `image/png`, content length, cache metadata and `nosniff`.
-7. LINE receives **one Flex Card containing the QR image in the card itself**; no separate image message.
+7. LINE receives one Flex Card containing the QR image in the card itself; no separate image message.
 8. Only after QR render validation + LINE push succeeds may Base/D1 advance to `QR Sent` / `PAYMENT` / Payment Pending lifecycle.
 9. Success → green terminal card, no actions.
 10. If QR rendering or LINE push fails, the system must not falsely mark `QR Sent`.
 
-## QR PNG runtime incident — 2026-08-23 14:20 ICT
+Live evidence on 2026-08-23 14:30 ICT confirms items 1, 2, 7 and 9, plus Customer/CASE Payment lifecycle state.
 
-After the one-card Preview passed live, Confirm failed in preflight with:
-`QR encoder does not expose toBuffer in this runtime`.
+## QR PNG runtime incident — closed
+
+The earlier Confirm failures were:
+- `qr.toBuffer is not a function`
+- `QR encoder does not expose toBuffer in this runtime`
 
 Root cause:
 - Cloudflare Workers bundles the `qrcode` browser build.
-- browser build does not expose Node-only `toBuffer()` at all; default/named export normalization cannot fix that.
+- browser build does not expose Node-only `toBuffer()`.
 
 Permanent correction:
 - QR route no longer calls `toBuffer`.
@@ -142,7 +158,7 @@ Permanent correction:
 - PNG is encoded with Web Platform APIs (`CompressionStream("deflate")`) plus explicit PNG signature/IHDR/IDAT/IEND and CRC32.
 - regression test generates a real PNG, parses chunks, inflates IDAT, checks dimensions/filter bytes/dark+light pixels, and asserts no `.toBuffer(` remains in the runtime QR path.
 
-The 14:20 failure occurred during PNG preflight before `Pending QR Send`, LINE push, lifecycle advancement, or draft completion. Therefore no Base/D1 commercial rollback is required for that failure; the same active orange QR Preview may be retried after deploy.
+The successful 14:30 live retry closes this incident.
 
 ## Current verified code milestone
 
@@ -156,25 +172,27 @@ GitHub CI:
 - result: **SUCCESS**
 - `npm run check`: PASS (typecheck + 117 tests including real PNG inflate test + Worker dry-run bundle)
 
+Current branch HEAD after this evidence update is documentation-only and does not supersede the verified code SHA above.
+
 ## Controlled live operation next
 
-Do not recreate Base/D1/Queue/DLQ, do not rerun migrations, do not rerun lifecycle schema reconciliation, and do not rerun failed-QR recovery for the 14:20 `toBuffer` preflight failure.
+Do not recreate Base/D1/Queue/DLQ, do not rerun migrations, do not rerun lifecycle schema reconciliation, and do not rerun failed-QR recovery.
 
-Next operation:
-1. Sync Mac branch to the latest branch HEAD containing verified code HEAD `d45daaa2ee46d8be8ec9fa8d6b88f275292a11fe`.
-2. Deploy the existing Worker using the already-configured local `wrangler.jsonc` and existing secrets.
-3. Verify `/health` remains HTTP 200 and `configuration.ready=true`.
-4. On the existing orange QR Preview card for ฿32,100, press `✅ ยืนยันสร้าง + ส่ง LINE` again; no need to open a new QR card.
-5. Acceptance requires all of:
-   - same Lark card becomes green terminal/no actions
-   - LINE receives one Flex Card with visible QR embedded inside it
-   - no separate image message / grey placeholder
-   - Customer becomes `💳 Payment Pending`
-   - Customer `🔥 Hot Lead`, score >=80, hot=true
-   - Chat CASE `PAYMENT`, lead_quality `🔥 Hot Lead`
-   - Deal pipeline `Payment Pending`
-   - payment_status `QR Sent`
-6. Then proceed to payment/Closed Won E2E.
+Next operations:
+1. Verify the same existing Sales_Deals record after the successful QR has:
+   - `pipeline_stage = Payment Pending`
+   - `payment_status = QR Sent`
+   - payment amount ฿32,100
+   - same original deal record; no duplicate deal.
+2. If that readback passes, mark corrected QR E2E fully accepted.
+3. Proceed to payment confirmation / Closed Won E2E:
+   - payment confirmation action/command
+   - Deal → Payment Received / Closed Won as contract requires
+   - Customer → `🏆 Active Customer`
+   - total spend updates from Closed Won only
+   - existing Case Owner attribution remains unchanged
+   - no real payment is performed; use demo acceptance only.
+4. Continue remaining controlled E2E: burst race, true concurrent Claim, specialist reply owner-preservation, media both directions, campaigns/retry/cross-route concurrency.
 
 ## Terminal safety
 
