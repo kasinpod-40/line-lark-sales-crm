@@ -7,6 +7,7 @@ import { analyzeByRules } from "../ai/rule-engine";
 import {
   buildCampaignFormCard,
   buildCampaignPreviewCard,
+  buildCancelledDraftCard,
   buildCaseCard,
   buildCloseDealConfirmCard,
   buildPaymentFormCard,
@@ -130,6 +131,11 @@ export class CardActionService {
         this.requireOwner(route, event.operatorOpenId);
         if (draft.created_by !== event.operatorOpenId) throw new Error("คุณไม่ใช่ผู้สร้างรายการนี้");
         await this.operational.finishDraft(draftId, "CANCELLED");
+        if (event.messageId) {
+          await this.lark.patchCard(event.messageId, buildCancelledDraftCard(draft.kind));
+        } else {
+          await this.lark.replyText(this.requireRoot(route), "⚪ รายการนี้ถูกยกเลิกแล้ว");
+        }
         await this.operational.completeAction(actionKey);
         return;
       }
