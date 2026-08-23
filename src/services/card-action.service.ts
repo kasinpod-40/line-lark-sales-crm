@@ -20,7 +20,7 @@ import { paymentConfirmationFlex, paymentFlex, quotationFlex } from "../provider
 import { getLineUserProfile, pushLineMessages, type LineImageMessage } from "../providers/line/line.provider";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
-import { asNumber, asString, type UnknownRecord } from "../utils/json";
+import { asNumber, asString, isRecord, type UnknownRecord } from "../utils/json";
 import { newId, stableUuid } from "../utils/id";
 import { parseMoney } from "../utils/money";
 
@@ -90,6 +90,64 @@ export class CardActionService {
     return profile?.displayName?.trim() || `LINE User ${route.line_user_id.slice(-6)}`;
   }
 
+  private async quoteCardMessageId(caseId: string): Promise<string | null> {
+    const stateId = `ui:quote-card:${caseId}`;
+    const row = await this.env.DB.prepare(
+      "SELECT payload_json FROM interaction_drafts WHERE draft_id=? LIMIT 1",
+    ).bind(stateId).first<UnknownRecord>();
+    if (!row) return null;
+    try {
+      const payload: unknown = JSON.parse(asString(row.payload_json, "{}"));
+      return isRecord(payload) ? asString(payload.message_id).trim() || null : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async rememberQuoteCardMessageId(caseId: string, createdBy: string, messageId: string): Promise<void> {
+    const stateId = `ui:quote-card:${caseId}`;
+    const now = Date.now();
+    const expiresAt = now + 365 * 24 * 60 * 60_000;
+    await this.env.DB.prepare(
+      `INSERT INTO interaction_drafts
+        (draft_id,kind,case_id,created_by,payload_json,status,recipient_count,created_at,expires_at,completed_at)
+       VALUES (?,?,?,?,?,'PENDING',NULL,?,?,NULL)
+       ON CONFLICT(draft_id) DO UPDATE SET
+         case_id=excluded.case_id,
+         created_by=excluded.created_by,
+         payload_json=excluded.payload_json,
+         status='PENDING',
+         expires_at=excluded.expires_at,
+         completed_at=NULL`,
+    ).bind(
+      stateId,
+      "quote_ui",
+      caseId,
+      createdBy,
+      JSON.stringify({ message_id: messageId }),
+      now,
+      expiresAt,
+    ).run();
+  }
+
+  private async openOrResetQuoteCard(route: CaseRoute, operatorOpenId: string): Promise<void> {
+    const root = this.requireRoot(route);
+    const card = buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), 1, {});
+    const existingMessageId = await this.quoteCardMessageId(route.case_id);
+    if (existingMessageId) {
+      try {
+        await this.lark.patchCard(existingMessageId, card);
+        return;
+      } catch {
+        // The remembered message may have been deleted manually. Fall through
+        // to create exactly one replacement and remember the new message id.
+      }
+    }
+    const messageId = await this.lark.replyCard(root, card);
+    if (!messageId) throw new Error("Lark ไม่คืน message_id ของ Quote Form");
+    await this.rememberQuoteCardMessageId(route.case_id, operatorOpenId, messageId);
+  }
+
   private async refreshRoot(
     route: CaseRoute,
     options: { dealAmount?: number; performance?: Awaited<ReturnType<LarkBaseRepository["getSalesPerformance"]>> } = {},
@@ -134,6 +192,9 @@ export class CardActionService {
         await this.operational.finishDraft(draftId, "CANCELLED");
         if (event.messageId) {
           await this.lark.patchCard(event.messageId, buildCancelledDraftCard(draft.kind));
+          if (draft.kind === "quote") {
+            await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
+          }
         } else {
           await this.lark.replyText(this.requireRoot(route), "⚪ รายการนี้ถูกยกเลิกแล้ว");
         }
@@ -162,10 +223,7 @@ export class CardActionService {
 
         case "open_quote_form": {
           this.requireOwner(route, event.operatorOpenId);
-          await this.lark.replyCard(
-            root,
-            buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), 1),
-          );
+          await this.openOrResetQuoteCard(route, event.operatorOpenId);
           break;
         }
 
@@ -183,6 +241,7 @@ export class CardActionService {
               event.formValue,
             ),
           );
+          await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
           break;
         }
 
@@ -191,7 +250,14 @@ export class CardActionService {
           const quote = parseQuoteForm(event.formValue, { defaultVatRate: asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7) });
           const draftId = newId("draft");
           await this.operational.createDraft({ draft_id: draftId, kind: "quote", case_id: route.case_id, created_by: event.operatorOpenId, payload: quote });
-          await this.lark.replyCard(root, buildQuotePreviewCard(route.case_id, draftId, quote));
+          const preview = buildQuotePreviewCard(route.case_id, draftId, quote);
+          if (event.messageId) {
+            await this.lark.patchCard(event.messageId, preview);
+            await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
+          } else {
+            const messageId = await this.lark.replyCard(root, preview);
+            if (messageId) await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, messageId);
+          }
           break;
         }
 
@@ -208,6 +274,7 @@ export class CardActionService {
           route = await this.operational.setCaseStatus(route.case_id, "QUOTED");
           await this.base.upsertCaseTracking(route);
           await this.operational.finishDraft(draft.draft_id);
+          if (event.messageId) await this.rememberQuoteCardMessageId(route.case_id, event.operatorOpenId, event.messageId);
           await this.refreshRoot(route, { dealAmount: draft.payload.total_amount });
           await this.lark.replyText(root, `✅ บันทึก ${draft.payload.quotation_no} และส่ง LINE แล้ว • ฿${draft.payload.total_amount.toLocaleString("th-TH")}`);
           break;
