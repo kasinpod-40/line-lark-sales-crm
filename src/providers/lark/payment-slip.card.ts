@@ -72,9 +72,9 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
     : "🧾 ได้รับรูปในเคสที่อยู่ขั้น **Payment** — กรุณาตรวจว่าเป็นสลิป/หลักฐานการชำระเงินหรือไม่";
   const slipAmountText = hasSlipAmount ? `฿${formatMoney(input.slipAmount ?? 0)}` : "อ่านยอดไม่ได้";
   const comparison = matches
-    ? "✅ **ยอดในสลิปตรงกับยอด Deal**"
+    ? "✅ **ยอดชำระเงินถูกต้อง — ยอดในสลิปตรงกับยอด Deal**"
     : mismatch
-      ? "⚠️ **ยอดในสลิปไม่ตรงกับยอด Deal — กรุณาตรวจสอบก่อนตัดสินใจ**"
+      ? "⚠️ **ยอดชำระเงินไม่ตรง — ยอดในสลิปไม่ตรงกับยอด Deal กรุณาตรวจสอบก่อนตัดสินใจ**"
       : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริง**";
   const bankLine = input.slipBank ? `\nธนาคารที่ AI อ่านได้: **${input.slipBank}**` : "";
   const confirmLabel = mismatch
