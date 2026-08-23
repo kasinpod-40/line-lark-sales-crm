@@ -4,7 +4,7 @@ Last updated: 2026-08-23 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR + COMMERCIAL-LIFECYCLE CORRECTION CODE VERIFIED IN CI #257 / LIVE SELECT-OPTION RECONCILIATION + FAILED-QR TEST RECOVERY + WORKER DEPLOY ARE THE NEXT CONTROLLED OPERATIONS.**
+**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR ONE-CARD PREVIEW LIVE-PASSED / WORKERS-PORTABLE QR PNG FIX VERIFIED IN CI #274 / NEXT STEP IS DEPLOY ONLY AND RETRY THE SAME ACTIVE QR PREVIEW CARD.**
 
 There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only. PR #1 remains Draft / Open / Unmerged until the remaining controlled E2E acceptance is complete.
 
@@ -22,7 +22,7 @@ There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are ver
 
 Dedicated Cloudflare resources:
 - Worker `line-lark-sales-crm`
-- D1 `line-lark-sales-crm`
+- D1 `line-lark-sales-crm`, UUID `752d602c-7d18-4354-9c2f-ac7b8178ba16`
 - Queue `line-lark-sales-crm-events`
 - DLQ `line-lark-sales-crm-events-dlq`
 - Workers AI binding enabled
@@ -31,7 +31,7 @@ Dedicated Cloudflare resources:
 Worker URL:
 `https://line-lark-sales-crm.kasinpod40.workers.dev`
 
-Latest live `/health` before the current correction batch:
+Latest live `/health` after lifecycle recovery/deploy:
 - HTTP 200
 - `ok=true`
 - `configuration.ready=true`
@@ -75,21 +75,13 @@ Presentation authority from latest exported `.base`:
    - one Sales_Deals record
    - LINE customer received quotation Flex
    - successful quote preview becomes green terminal card with no actions.
+9. QR Lark one-card preview — PASS visually:
+   - one orange preview card
+   - row 1 full-width `✅ ยืนยันสร้าง + ส่ง LINE`
+   - row 2 `✏️ แก้ไขยอดเงิน` | `❌ ยกเลิก`
+   - amount ฿32,100
 
-Still not accepted: burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, corrected QR flow, payment/Closed Won, campaigns/retry/cross-route concurrency.
-
-## Latest Base audit — root causes found
-
-Latest uploaded golden `.base` after the first QR test proved structure is healthy but commercial state was inconsistent:
-
-- Customers: `customer_stage = 📄 Quotation Sent`
-- Customers: `lead_quality = 🌱 New Lead`, `lead_score = 0`
-- Chat CASE: `case_status = PAYMENT`, `lead_quality` blank
-- Sales_Deals: `payment_status = QR Sent`, `pipeline_stage = Quotation`
-- LINE actually showed a grey image placeholder instead of a usable QR image.
-- `customer_stage` select also contained one accidental blank option.
-
-This was a false-positive payment state: the system advanced Base/D1 to QR Sent/PAYMENT even though the QR image was not usable on LINE.
+Still not accepted: QR LINE embedded image success, burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, payment/Closed Won, campaigns/retry/cross-route concurrency.
 
 ## Canonical commercial lifecycle — locked
 
@@ -106,6 +98,15 @@ Lead quality floor:
 - Closed Won: Active Customer; commercial maturity must not be demoted by a later generic message
 
 `Chat_Tracking` CASE rows must also receive lifecycle `lead_quality`.
+
+## Live lifecycle repair evidence
+
+The controlled schema reconciliation already succeeded on the golden Base:
+- Customers `customer_stage`: accidental blank option removed; `💳 Payment Pending` added.
+- Sales_Deals `pipeline_stage`: `Payment Pending` added.
+- mutation_count=2 with readback.
+
+The failed old QR state was recovered to the last verified quoted state and Worker health subsequently returned ready=true. Do not rerun schema reconciliation merely because of later QR-render failures.
 
 ## QR contract — corrected and locked
 
@@ -125,52 +126,55 @@ Correct QR behavior:
 9. Success → green terminal card, no actions.
 10. If QR rendering or LINE push fails, the system must not falsely mark `QR Sent`.
 
+## QR PNG runtime incident — 2026-08-23 14:20 ICT
+
+After the one-card Preview passed live, Confirm failed in preflight with:
+`QR encoder does not expose toBuffer in this runtime`.
+
+Root cause:
+- Cloudflare Workers bundles the `qrcode` browser build.
+- browser build does not expose Node-only `toBuffer()` at all; default/named export normalization cannot fix that.
+
+Permanent correction:
+- QR route no longer calls `toBuffer`.
+- `src/utils/qr-png.ts` uses portable `qrcode.create()` to obtain the QR module matrix.
+- the matrix is rasterized as 8-bit grayscale.
+- PNG is encoded with Web Platform APIs (`CompressionStream("deflate")`) plus explicit PNG signature/IHDR/IDAT/IEND and CRC32.
+- regression test generates a real PNG, parses chunks, inflates IDAT, checks dimensions/filter bytes/dark+light pixels, and asserts no `.toBuffer(` remains in the runtime QR path.
+
+The 14:20 failure occurred during PNG preflight before `Pending QR Send`, LINE push, lifecycle advancement, or draft completion. Therefore no Base/D1 commercial rollback is required for that failure; the same active orange QR Preview may be retried after deploy.
+
 ## Current verified code milestone
 
 Exact verified code HEAD:
-`e64d304dcb4b94e07955979c2d07c054df3be7d7`
+`d45daaa2ee46d8be8ec9fa8d6b88f275292a11fe`
 
 GitHub CI:
-- run `32620144832`
-- run #257
-- job `97146982117`
+- run `32625500482`
+- run #274
+- job `97160117726`
 - result: **SUCCESS**
-- `npm run check`: PASS (typecheck + tests + Worker dry-run bundle)
-
-Key corrections in this verified line:
-- canonical `💳 Payment Pending` Customer stage
-- canonical `Payment Pending` Deal pipeline stage
-- commercial lifecycle reconciler prevents AI no-demotion regressions
-- CASE `lead_quality` reconciliation
-- one-active-card QR UX
-- QR embedded in LINE Flex
-- QR route render preflight before state advancement
-- hardened PNG GET/HEAD response
-- exact D1 deal-record lookup retained
-- plan-first lifecycle select-field reconciler
-- controlled failed-QR test recovery operator
-- regression tests for contract/lifecycle/QR ordering/operator syntax
+- `npm run check`: PASS (typecheck + 117 tests including real PNG inflate test + Worker dry-run bundle)
 
 ## Controlled live operation next
 
-Do this once against the existing golden stack; do not recreate Base/D1/Queue/DLQ and do not rerun migrations:
+Do not recreate Base/D1/Queue/DLQ, do not rerun migrations, do not rerun lifecycle schema reconciliation, and do not rerun failed-QR recovery for the 14:20 `toBuffer` preflight failure.
 
-1. Sync Mac branch to exact verified HEAD above.
-2. Run `scripts/reconcile-lark-base-lifecycle-options.mjs --apply` against the existing Base. It is scoped to exactly:
-   - `Customers.customer_stage`
-   - `Sales_Deals.pipeline_stage`
-   It removes the accidental blank stage option and adds the canonical Payment Pending options with readback verification.
-3. Run `scripts/recover-failed-qr-case.mjs --apply` for the known controlled test case. It fail-closes unless the current case is Open + PAYMENT + QR Sent/Pending QR Send, then rolls only that failed QR attempt back to the last verified QUOTED state in Base and D1.
-4. Deploy the existing Worker using the already-configured local `wrangler.jsonc` and existing secrets.
-5. Verify `/health` remains HTTP 200 and `configuration.ready=true`.
-6. Reopen `💳 ส่ง QR ชำระเงิน` from the existing Case Card and validate the corrected single-card → embedded-QR LINE flow.
-7. After successful QR, verify Base reads:
-   - Customer `💳 Payment Pending`
+Next operation:
+1. Sync Mac branch to the latest branch HEAD containing verified code HEAD `d45daaa2ee46d8be8ec9fa8d6b88f275292a11fe`.
+2. Deploy the existing Worker using the already-configured local `wrangler.jsonc` and existing secrets.
+3. Verify `/health` remains HTTP 200 and `configuration.ready=true`.
+4. On the existing orange QR Preview card for ฿32,100, press `✅ ยืนยันสร้าง + ส่ง LINE` again; no need to open a new QR card.
+5. Acceptance requires all of:
+   - same Lark card becomes green terminal/no actions
+   - LINE receives one Flex Card with visible QR embedded inside it
+   - no separate image message / grey placeholder
+   - Customer becomes `💳 Payment Pending`
    - Customer `🔥 Hot Lead`, score >=80, hot=true
    - Chat CASE `PAYMENT`, lead_quality `🔥 Hot Lead`
    - Deal pipeline `Payment Pending`
    - payment_status `QR Sent`
-8. Then proceed to payment/Closed Won E2E.
+6. Then proceed to payment/Closed Won E2E.
 
 ## Terminal safety
 
