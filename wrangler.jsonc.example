@@ -32,8 +32,8 @@
     "consumers": [
       {
         "queue": "line-lark-sales-crm-events",
-        "max_batch_size": 10,
-        "max_batch_timeout": 5,
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
         "max_retries": 5,
         "dead_letter_queue": "line-lark-sales-crm-events-dlq",
         "max_concurrency": 5
