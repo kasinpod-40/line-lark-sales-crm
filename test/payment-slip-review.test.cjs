@@ -15,9 +15,10 @@ test('payment slip review shows both amounts, comparison result and two horizont
   assert.match(source, /ยอดชำระเงินไม่ตรง/);
   assert.match(source, /AI ช่วยอ่านภาพและเทียบยอดเท่านั้น/);
   assert.match(source, /twoColumns\(/);
-  const confirmAt = source.indexOf('"✅ ยืนยันรับชำระ"');
+  const confirmAt = source.indexOf('"✅ ยืนยันรับเงิน"');
   const rejectAt = source.indexOf('"❌ ไม่ถูกต้อง"');
   assert.ok(confirmAt >= 0 && rejectAt > confirmAt, 'confirm and reject must share the two-column action row');
+  assert.match(source, /"⚠️ ยืนยันรับเงิน"/);
   assert.match(source, /confirm_slip_payment/);
   assert.match(source, /reject_payment_slip/);
   assert.doesNotMatch(source, /close_deal_prompt/);
