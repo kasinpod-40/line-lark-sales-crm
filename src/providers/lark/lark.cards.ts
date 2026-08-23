@@ -134,9 +134,26 @@ export function buildThreadGuardWarningCard(): unknown {
   );
 }
 
-export function buildQuoteFormCard(caseId: string, defaultVatRate = 7): unknown {
+export function buildQuoteItemCountCard(caseId: string): unknown {
+  return card(
+    "blue",
+    "🎨 เลือกจำนวนรายการ",
+    [
+      md("เลือกจำนวนสินค้า/บริการที่จะใส่ในใบเสนอราคา ระบบจะแสดงช่องกรอก **เท่าที่เลือกจริง**"),
+      button("1 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "1" }, "primary_filled"),
+      button("2 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "2" }),
+      button("3 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "3" }),
+      button("4 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "4" }),
+      button("5 รายการ", { action: "open_quote_form_count", case_id: caseId, item_count: "5" }),
+    ],
+    "เลือกจำนวนรายการสำหรับใบเสนอราคา",
+  );
+}
+
+export function buildQuoteFormCard(caseId: string, defaultVatRate = 7, itemCount = 1): unknown {
+  const count = Math.max(1, Math.min(5, Math.round(itemCount)));
   const formElements: unknown[] = [input("quotation_no", "เลขที่ใบเสนอราคา (เว้นว่างให้ระบบตั้งให้)")];
-  for (let index = 1; index <= 5; index += 1) {
+  for (let index = 1; index <= count; index += 1) {
     formElements.push(
       md(`**รายการ ${index}**`),
       input(`item_${index}_description`, "สินค้า/บริการ", "", index === 1),
@@ -154,9 +171,9 @@ export function buildQuoteFormCard(caseId: string, defaultVatRate = 7): unknown 
   );
   return card(
     "blue",
-    "🎨 กรอกใบเสนอราคา",
+    `🎨 กรอกใบเสนอราคา • ${count} รายการ`,
     [{ tag: "form", name: "quote_form", elements: formElements }],
-    "กรอกใบเสนอราคาและตรวจสอบก่อนส่ง LINE",
+    `กรอกใบเสนอราคา ${count} รายการและตรวจสอบก่อนส่ง LINE`,
   );
 }
 
