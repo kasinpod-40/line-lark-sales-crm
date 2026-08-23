@@ -10,13 +10,14 @@ import {
   buildPaymentSinglePreviewCard,
 } from "../providers/lark/payment.cards";
 import { LarkClient } from "../providers/lark/lark.client";
-import { paymentFlex } from "../providers/line/line.flex";
-import { getLineUserProfile, pushLineMessages, type LineImageMessage } from "../providers/line/line.provider";
+import { paymentQrFlex } from "../providers/line/payment.flex";
+import { getLineUserProfile, pushLineMessages } from "../providers/line/line.provider";
 import { LarkBaseRepository } from "../storage/lark-base.repository";
 import { OperationalRepository } from "../storage/operational.repository";
 import { asNumber, asString, isRecord, type UnknownRecord } from "../utils/json";
 import { newId, stableUuid } from "../utils/id";
 import { parseMoney } from "../utils/money";
+import { CommercialLifecycleService } from "./commercial-lifecycle.service";
 import type { CardActionEvent } from "./card-action.service";
 
 type PaymentDraft = { amount: number; note?: string; deal_record_id: string };
@@ -49,11 +50,13 @@ export class PaymentCardActionService {
   private readonly operational: OperationalRepository;
   private readonly base: LarkBaseRepository;
   private readonly lark: LarkClient;
+  private readonly lifecycle: CommercialLifecycleService;
 
   constructor(private readonly env: Env) {
     this.operational = new OperationalRepository(env);
     this.base = new LarkBaseRepository(env);
     this.lark = new LarkClient(env);
+    this.lifecycle = new CommercialLifecycleService(env);
   }
 
   private async routeFor(event: CardActionEvent): Promise<CaseRoute> {
@@ -141,9 +144,10 @@ export class PaymentCardActionService {
   }
 
   private async updateDraftPayload(draftId: string, payload: PaymentDraft): Promise<void> {
-    await this.env.DB.prepare(
+    const result = await this.env.DB.prepare(
       "UPDATE interaction_drafts SET payload_json=?, expires_at=? WHERE draft_id=? AND kind='payment' AND status='PENDING'",
     ).bind(JSON.stringify(payload), Date.now() + 30 * 60_000, draftId).run();
+    if ((result.meta.changes ?? 0) < 1) throw new Error("QR draft หมดอายุหรือไม่ถูกต้อง");
   }
 
   private async completedDraft(draftId: string): Promise<{ caseId: string; createdBy: string; payload: PaymentDraft } | null> {
@@ -202,6 +206,18 @@ export class PaymentCardActionService {
     const messageId = await this.lark.replyCard(this.requireRoot(route), preview);
     if (!messageId) throw new Error("Lark ไม่คืน message_id ของ QR Card");
     await this.rememberUi(route.case_id, operatorOpenId, messageId, draftId);
+  }
+
+  private async preflightQrUrl(qrUrl: string): Promise<void> {
+    const response = await fetch(qrUrl, {
+      method: "GET",
+      headers: { "cache-control": "no-cache" },
+    });
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const bytes = await response.arrayBuffer();
+    if (!response.ok || !contentType.startsWith("image/png") || bytes.byteLength < 256) {
+      throw new Error(`QR PNG preflight failed: HTTP ${response.status}, content-type=${contentType || "none"}, bytes=${bytes.byteLength}`);
+    }
   }
 
   async handle(event: CardActionEvent): Promise<void> {
@@ -293,6 +309,7 @@ export class PaymentCardActionService {
               event.messageId
             ) {
               await this.lark.patchCard(event.messageId, buildPaymentSentCard(completed.payload.amount));
+              await this.lifecycle.reconcileCase(route.case_id);
               break;
             }
             throw new Error("QR draft หมดอายุหรือไม่ถูกต้อง");
@@ -322,23 +339,22 @@ export class PaymentCardActionService {
           const baseUrl = this.env.PUBLIC_BASE_URL.replace(/\/$/, "");
           if (!baseUrl.startsWith("https://")) throw new Error("PUBLIC_BASE_URL ต้องเป็น HTTPS");
           const qrUrl = `${baseUrl}/assets/qr/${token}.png`;
-          const image: LineImageMessage = {
-            type: "image",
-            originalContentUrl: qrUrl,
-            previewImageUrl: qrUrl,
-          };
 
+          // Fail closed: the exact public PNG used by LINE must be reachable
+          // before the Deal is allowed to advance to QR Sent.
+          await this.preflightQrUrl(qrUrl);
           await this.base.markQrState(draft.payload.deal_record_id, draft.payload.amount, "Pending QR Send");
           await pushLineMessages(
             this.env,
             route.line_user_id,
-            [paymentFlex(companyName(this.env), draft.payload.amount, draft.payload.note), image],
+            [paymentQrFlex(companyName(this.env), draft.payload.amount, qrUrl, draft.payload.note)],
             await stableUuid(`qr:${draft.draft_id}`),
           );
           await this.base.markQrState(draft.payload.deal_record_id, draft.payload.amount, "QR Sent");
           route = await this.operational.setCaseStatus(route.case_id, "PAYMENT");
           await this.base.upsertCaseTracking(route);
           await this.operational.finishDraft(draft.draft_id);
+          await this.lifecycle.reconcileCase(route.case_id);
 
           if (event.messageId) {
             await this.lark.patchCard(event.messageId, buildPaymentSentCard(draft.payload.amount)).catch((error) => {
