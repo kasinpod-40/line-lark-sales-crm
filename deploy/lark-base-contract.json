@@ -21,6 +21,7 @@
             { "name": "🌱 New Lead" },
             { "name": "💬 Contacted" },
             { "name": "📄 Quotation Sent" },
+            { "name": "💳 Payment Pending" },
             { "name": "🏆 Active Customer" },
             { "name": "💤 Inactive" }
           ]
@@ -177,7 +178,7 @@
           "type": "select",
           "name": "pipeline_stage",
           "multiple": false,
-          "options": [{ "name": "Lead" }, { "name": "Quotation" }, { "name": "Payment Received" }, { "name": "Closed Won" }]
+          "options": [{ "name": "Lead" }, { "name": "Quotation" }, { "name": "Payment Pending" }, { "name": "Payment Received" }, { "name": "Closed Won" }]
         },
         { "type": "text", "name": "quotation_no" },
         { "type": "text", "name": "quotation_status" },
