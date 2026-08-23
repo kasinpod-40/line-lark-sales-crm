@@ -4,206 +4,187 @@ Last updated: 2026-08-23 (ICT)
 
 ## Current Status
 
-**PRODUCT RELEASE 0.3.0 / PERSONAL GOLDEN BASE SCHEMA COMPLETE / PREMIUM UX 22/22 MEMBERSHIP COMPLETE / DEDICATED CLOUDFLARE D1 + QUEUE + DLQ CREATED / D1 MIGRATIONS 2 OF 2 APPLIED / LARK-FIRST MEDIA ARCHITECTURE COMPLETE / R2 NOT REQUIRED / WORKER FIRST DEPLOY COMPLETE / `/health` HTTP 200 + `configuration.ready=true` / LINE WEBHOOK CUT OVER AND VERIFIED / LARK ENCRYPTED CALLBACK ROOT CAUSE FIXED WITH WORKERS WEB CRYPTO + CI #199 SUCCESS / PATCH AWAITS LIVE WORKER DEPLOY / CONTROLLED E2E NOT YET COMPLETE.**
+**PRODUCT RELEASE 0.3.0 / GOLDEN SINGLE-STACK LIVE / EXACTLY 3 LARK BASE BUSINESS TABLES / NO R2 / LINE + LARK CALLBACKS LIVE / QUOTE E2E PASSED / PERSON OWNER PASSED / THREAD → LINE PASSED / ROOT-CHAT ISOLATION PASSED / LOW-LATENCY QUEUE TUNING ACCEPTED / QR + COMMERCIAL-LIFECYCLE CORRECTION CODE VERIFIED IN CI #257 / LIVE SELECT-OPTION RECONCILIATION + FAILED-QR TEST RECOVERY + WORKER DEPLOY ARE THE NEXT CONTROLLED OPERATIONS.**
 
-There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only.
+There is no DEV/UAT/STAGING/PROD ladder for this product build. Local/CI are verification gates only. PR #1 remains Draft / Open / Unmerged until the remaining controlled E2E acceptance is complete.
 
-## Requirements authority — locked
+## Locked architecture
 
-1. Full customer SRS/SOW existed first.
-2. PM later sent the concise five-function summary and linked back to the SRS.
-3. PM summary is the latest executive acceptance view; the full SRS remains the detailed supporting specification unless explicitly contradicted.
+- Lark = customer-facing CRM/frontend and stored-media authority.
+- D1 = invisible technical state for claim/dedupe/routing/drafts/QR metadata/campaign/media-proxy metadata.
+- Queue + DLQ = async delivery/retry.
+- Worker = LINE ↔ Lark transport/orchestration.
+- R2 is not required and must not be introduced unless a later explicit requirement changes the architecture.
+- Exactly three Lark Base business tables: `Customers`, `Chat_Tracking`, `Sales_Deals`.
+- Customer-specific IDs/credentials are configuration only; no customer-specific business-logic fork.
 
-PM acceptance view:
-1. LINE inbound → blue Case Card + AI intent/lead quality → atomic Claim Case → same card green with owner.
-2. Quote and PromptPay QR sales tools with preview/confirm.
-3. Smart Close → `Sales_Deals` → Active Customer.
-4. Close Case → executive summary including SLA/response and Sales closed revenue/deal count.
-5. VIP/retarget broadcast commands from Lark Base segmentation.
+## Golden runtime
 
-Never describe the SRS as a later scope expansion.
+Dedicated Cloudflare resources:
+- Worker `line-lark-sales-crm`
+- D1 `line-lark-sales-crm`
+- Queue `line-lark-sales-crm-events`
+- DLQ `line-lark-sales-crm-events-dlq`
+- Workers AI binding enabled
+- D1 migrations 2/2 already applied; do not rerun/rewrite them.
 
-## Reusable business contract
+Worker URL:
+`https://line-lark-sales-crm.kasinpod40.workers.dev`
 
-Exactly three Lark Base business tables:
-- `Customers`
-- `Chat_Tracking`
-- `Sales_Deals`
+Latest live `/health` before the current correction batch:
+- HTTP 200
+- `ok=true`
+- `configuration.ready=true`
+- LINE/Lark/Base/PromptPay/operational/media/Workers AI readiness true
+- only warning: `VIP_THRESHOLDS_NOT_CONFIGURED`
 
-All API field names are lower `snake_case`. No Product table and no separate Quotation table.
+PromptPay remains demo configuration only. Never use the current placeholder for real payment acceptance.
 
-## Personal golden Base — current authority
+## Golden Lark Base
 
-Latest uploaded `.base` snapshot is the current runtime/presentation authority. It confirms exactly three business tables, 22 curated Views, 2 dashboards and 23 dashboard blocks.
+Base: `LINE OA Sales CRM`
 
-The latest snapshot currently displays the three table names with emoji prefixes:
-- `👥 Customers`
-- `💬 Chat_Tracking`
-- `💰 Sales_Deals`
+Table IDs:
+- Customers `tblpv0icWMgX66wQ`
+- Chat_Tracking `tbl0H0zavzG6EmXm`
+- Sales_Deals `tblc0zJSoGCtxnJT`
 
-Runtime repositories are configured by concrete table IDs, so this presentation-name drift is not assumed to break runtime. Do not rerun the completed UX lanes and do not rename/delete/recreate tables merely to satisfy an older name-only expectation. Provisioning/name-based tooling must be assessed separately if it is run again.
+Presentation authority from latest exported `.base`:
+- exactly 3 business tables
+- 22 curated views
+- 2 dashboards
+- 23 dashboard blocks
+- Person field `sales` exists and current owned records contain Person values
+- visible-field membership is accepted; 15 order-only differences are non-blocking because the supported Base JS SDK has no documented reorder setter. Do not rerun UX merely to chase cosmetic order.
 
-## Premium UX — complete for runtime acceptance
+## Controlled E2E evidence already passed
 
-Lane A server structure/settings apply completed successfully. Lane B final in-Base JS SDK verification returned:
-- expected Views: 22
-- visible-field membership: 22/22
-- exact order: 7
-- order-only drift: 15
-- unsupported: 0
-- failures: []
-- final mutation pass: 0
+1. `/health` — PASS.
+2. LINE text → one root Case Card + Thread + Base records — PASS.
+3. Single-user Claim — PASS.
+4. Owner Reply in Thread → exact LINE text — PASS.
+5. Person `sales` ownership field — PASS visually across relevant records.
+6. Queue latency tuning — accepted; user reported no perceptible hang/failure.
+7. Root-chat isolation — Lark warning behavior passed and root messages are not an outbound LINE route.
+8. Quote flow — PASS end-to-end:
+   - Quote `QT-20260823`
+   - 2 items
+   - subtotal ฿30,000
+   - VAT 7% = ฿2,100
+   - total ฿32,100
+   - one Sales_Deals record
+   - LINE customer received quotation Flex
+   - successful quote preview becomes green terminal card with no actions.
 
-Owner accepted the 15 order-only differences as non-blocking. No manual reorder is required and Lane B must not be rerun merely to chase order.
+Still not accepted: burst first-message race, true two-Sales concurrent claim, specialist responder/owner preservation, media both directions, corrected QR flow, payment/Closed Won, campaigns/retry/cross-route concurrency.
 
-## Dedicated Cloudflare resources — locked
+## Latest Base audit — root causes found
 
-All Cloudflare resources for this product must be dedicated to this project. Never bind BNK, legacy CRM or Social MKT resources.
+Latest uploaded golden `.base` after the first QR test proved structure is healthy but commercial state was inconsistent:
 
-Dedicated runtime resources:
-- Worker: `line-lark-sales-crm`
-- D1: `line-lark-sales-crm`
-- Queue: `line-lark-sales-crm-events`
-- DLQ: `line-lark-sales-crm-events-dlq`
-- Workers AI binding: enabled on current golden deployment
+- Customers: `customer_stage = 📄 Quotation Sent`
+- Customers: `lead_quality = 🌱 New Lead`, `lead_score = 0`
+- Chat CASE: `case_status = PAYMENT`, `lead_quality` blank
+- Sales_Deals: `payment_status = QR Sent`, `pipeline_stage = Quotation`
+- LINE actually showed a grey image placeholder instead of a usable QR image.
+- `customer_stage` select also contained one accidental blank option.
 
-**R2 is not required by the current product architecture.** Do not create or bind an R2 bucket merely because an earlier draft used one.
+This was a false-positive payment state: the system advanced Base/D1 to QR Sent/PAYMENT even though the QR image was not usable on LINE.
 
-## Cloudflare runtime provisioning — live state
+## Canonical commercial lifecycle — locked
 
-Verified live state:
-- dedicated D1 created successfully in APAC
-- dedicated Queue created successfully
-- dedicated DLQ created successfully
-- D1 migrations fully applied
-- Worker first deployment completed at `https://line-lark-sales-crm.kasinpod40.workers.dev`
-- `/health` returned HTTP 200, `ok=true`, `configuration.ready=true`
-- readiness true for LINE, Lark, Lark Base, PromptPay placeholder, operational state, media and Workers AI
-- VIP thresholds intentionally unset; current warning is non-blocking
-- PromptPay target remains demo/placeholder and must not be used for real payment acceptance
-- no R2 binding is present or required
+Customer stage:
+`🌱 New Lead → 💬 Contacted → 📄 Quotation Sent → 💳 Payment Pending → 🏆 Active Customer`
 
-### D1 migration milestone — complete
+Deal pipeline:
+`Lead → Quotation → Payment Pending → Payment Received → Closed Won`
 
-Applied in canonical order:
-1. `0001_operational_state.sql` — success
-2. `0002_srs_media_and_campaign_observability.sql` — success
+Lead quality floor:
+- before Quote: AI score may classify normally
+- Quote Sent: at least `⚡ High Intent`, score floor 60
+- Payment Pending: `🔥 Hot Lead`, score floor 80, `hot_lead=true`
+- Closed Won: Active Customer; commercial maturity must not be demoted by a later generic message
 
-Post-apply migration list returned `No migrations to apply!`.
+`Chat_Tracking` CASE rows must also receive lifecycle `lead_quality`.
 
-Verified remote tables include:
-- `_cf_KV`
-- `action_dedupe`
-- `campaign_batches`
-- `case_routes`
-- `d1_migrations`
-- `event_dedupe`
-- `interaction_drafts`
-- `media_assets`
-- `qr_assets`
-- `sqlite_sequence`
+## QR contract — corrected and locked
 
-Do not reapply or rewrite the already-live migration files.
+The old two-message design (PromptPay Flex + separate LINE image message) is retired for the active QR flow.
 
-## Lark-first media architecture — locked
+Correct QR behavior:
+1. `💳 ส่ง QR ชำระเงิน` opens/reuses exactly one Lark QR preview card.
+2. Preview layout:
+   - first row: full-width `✅ ยืนยันสร้าง + ส่ง LINE`
+   - second row: `✏️ แก้ไขยอดเงิน` | `❌ ยกเลิก`
+3. Edit amount updates the same card; save returns the same card to Preview.
+4. Cancel → grey terminal, no actions.
+5. Confirm creates the D1 QR asset and renders the exact QR route locally before any payment advancement.
+6. QR PNG endpoint supports GET + HEAD with `image/png`, content length, cache metadata and `nosniff`.
+7. LINE receives **one Flex Card containing the QR image in the card itself**; no separate image message.
+8. Only after QR render validation + LINE push succeeds may Base/D1 advance to `QR Sent` / `PAYMENT` / Payment Pending lifecycle.
+9. Success → green terminal card, no actions.
+10. If QR rendering or LINE push fails, the system must not falsely mark `QR Sent`.
 
-The customer-facing system is Lark-first and D1 remains invisible technical state.
+## Current verified code milestone
 
-Media behavior:
-- LINE → Lark: Worker downloads permitted LINE media and uploads it directly into the Case Thread. Lark stores the message resource. There is no R2 fallback copy.
-- If native Lark image upload fails, image delivery may fall back to a Lark file message; if Lark delivery still fails, Queue retry/DLQ handles the failure rather than silently persisting a second object copy elsewhere.
-- Lark → LINE: Worker reads the Lark message resource, registers an expiring D1 `media_assets` authorization record, and sends LINE a public HTTPS `/assets/media/<token>` URL when LINE requires a fetchable media URL or file link.
-- `/assets/media/<token>` resolves the D1 authorization, then fetches the resource from Lark on demand with the Internal App. File bytes remain authoritative in Lark.
-- `MEDIA_TTL_SECONDS` remains as the expiring proxy-token lifetime; it no longer describes R2 object retention.
-- D1 remains the authority for atomic claim, webhook/action dedupe, route state, drafts, QR metadata, campaign state and expiring media-proxy metadata.
-
-## LINE callback — live
-
-The golden/reference LINE OA webhook has been changed from the legacy `omnichannel-commerce-crm` endpoint to:
-
-`https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/line`
-
-LINE Developers verification returned **Success**. `Use webhook` and `Webhook redelivery` are enabled.
-
-This is a cutover: the LINE Messaging API channel has one webhook destination, so the old Worker no longer receives this OA's webhook events directly.
-
-## Lark encrypted callback incident — root cause fixed, live deploy pending
-
-When switching Lark Event Configuration to `Send notifications to developer's server`, the console returned:
-
-`Challenge code didn't get response`
-
-Runtime evidence established the exact failure chain:
-- Lark POST reaches `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark`
-- safe diagnostic showed `encrypted=true`, body size 206 bytes
-- decrypt failed immediately with `ReferenceError` before a challenge could be returned
-- plaintext challenge probes were already HTTP 200, so URL/DNS/Cloudflare ingress were not the blocker
-
-Root cause: `decryptLarkPayload()` dynamically imported `@larksuiteoapi/node-sdk` and used its Node-oriented `AESCipher`; that path is not safe in the Cloudflare Workers runtime used by this product.
-
-Minimal reusable fix:
-- callback decryption now uses native Web Crypto only
-- derive AES key as SHA-256 of Lark Encrypt Key
-- base64-decode encrypted payload
-- first 16 bytes are the IV
-- decrypt remaining bytes with AES-256-CBC
-- no Node SDK import occurs on the callback decrypt path
-- normal event/card verification-token enforcement remains unchanged
-- regression test encrypts a Lark-shaped URL-verification payload using the same protocol and verifies encrypted challenge decrypt + echo
-
-Exact verified code/test HEAD:
-`ccfcc9c196121dd00c9375a48cf1ae17ea05418e`
+Exact verified code HEAD:
+`e64d304dcb4b94e07955979c2d07c054df3be7d7`
 
 GitHub CI:
-- run `32592036251` / run #199
-- job `97077259162`
+- run `32620144832`
+- run #257
+- job `97146982117`
 - result: **SUCCESS**
-- full `npm run check`: **PASS**
+- `npm run check`: PASS (typecheck + tests + Worker dry-run bundle)
 
-The live Worker still needs this verified patch deployed before retrying Lark Request URL verification.
+Key corrections in this verified line:
+- canonical `💳 Payment Pending` Customer stage
+- canonical `Payment Pending` Deal pipeline stage
+- commercial lifecycle reconciler prevents AI no-demotion regressions
+- CASE `lead_quality` reconciliation
+- one-active-card QR UX
+- QR embedded in LINE Flex
+- QR route render preflight before state advancement
+- hardened PNG GET/HEAD response
+- exact D1 deal-record lookup retained
+- plan-first lifecycle select-field reconciler
+- controlled failed-QR test recovery operator
+- regression tests for contract/lifecycle/QR ordering/operator syntax
 
-## Terminal operator-safety rule — locked
+## Controlled live operation next
 
-Never instruct the owner to run `set -e` / `set -euo pipefail` directly in the interactive macOS Terminal shell. A non-zero child process can terminate the interactive shell and produce `[Process completed]`.
+Do this once against the existing golden stack; do not recreate Base/D1/Queue/DLQ and do not rerun migrations:
 
-## Delivery model — locked
+1. Sync Mac branch to exact verified HEAD above.
+2. Run `scripts/reconcile-lark-base-lifecycle-options.mjs --apply` against the existing Base. It is scoped to exactly:
+   - `Customers.customer_stage`
+   - `Sales_Deals.pipeline_stage`
+   It removes the accidental blank stage option and adds the canonical Payment Pending options with readback verification.
+3. Run `scripts/recover-failed-qr-case.mjs --apply` for the known controlled test case. It fail-closes unless the current case is Open + PAYMENT + QR Sent/Pending QR Send, then rolls only that failed QR attempt back to the last verified QUOTED state in Base and D1.
+4. Deploy the existing Worker using the already-configured local `wrangler.jsonc` and existing secrets.
+5. Verify `/health` remains HTTP 200 and `configuration.ready=true`.
+6. Reopen `💳 ส่ง QR ชำระเงิน` from the existing Case Card and validate the corrected single-card → embedded-QR LINE flow.
+7. After successful QR, verify Base reads:
+   - Customer `💳 Payment Pending`
+   - Customer `🔥 Hot Lead`, score >=80, hot=true
+   - Chat CASE `PAYMENT`, lead_quality `🔥 Hot Lead`
+   - Deal pipeline `Payment Pending`
+   - payment_status `QR Sent`
+8. Then proceed to payment/Closed Won E2E.
 
-Phase A now:
-- owner's personal Lark workspace/Base
-- owner-controlled Lark Internal App/Bot and `LINE Sales Inbox`
-- dedicated project Worker/D1/Queue/DLQ in owner's Cloudflare account
-- Lark message resources as media authority
-- controlled reference/test LINE OA
-- no real customer production credentials/business data in the private reference installation
+## Terminal safety
 
-PM/customer installations use the same verified release and resource pattern. Customer-specific credentials/resource IDs remain config only; no per-customer business-logic fork.
-
-## Next work
-
-1. Sync Mac to exact verified code/test HEAD `ccfcc9c196121dd00c9375a48cf1ae17ea05418e` (documentation-only handoff commits may follow it).
-2. Deploy the existing golden Worker with the already-configured local `wrangler.jsonc` and existing Cloudflare secrets; do not recreate D1/Queue/DLQ and do not rerun migrations.
-3. Recheck `/health` remains HTTP 200 with `configuration.ready=true`.
-4. Keep `wrangler tail` open and retry Lark Event Configuration Request URL `https://line-lark-sales-crm.kasinpod40.workers.dev/webhooks/lark` once. Expected diagnostic: encrypted callback parses successfully and `challenge_echo` is logged.
-5. After URL verification passes, add `im.message.receive_v1` and configure Card callback/action URL on the same Worker route.
-6. Run controlled E2E beginning with LINE text → one blue Case Card + Thread in `LINE Sales Inbox`.
-7. Do not mark `live-ready` / `reusable-ready` until the controlled E2E passes.
-8. Replace demo PromptPay configuration before any real payment/QR use.
+Never instruct the owner to run `set -e` or `set -euo pipefail` directly in interactive macOS Terminal. Keep real credentials/secrets out of chat and source.
 
 ## Handoff read order
 
 1. `AGENTS.md`
 2. `docs/current-task.md`
-3. `docs/requirements-authority.md`
-4. `docs/pm-presentation-handoff.md`
-5. `docs/customer-deployment-model.md`
-6. `deploy/product-manifest.json`
-7. `deploy/lark-base-contract.json`
-8. `deploy/lark-base-ux-contract.json`
-9. `docs/lark-base-provisioning.md`
-10. `docs/lark-base-ux.md`
-11. `docs/customer-srs-sow-2026-08-22.md`
-12. `docs/customer-srs-gap-analysis.md`
-13. `docs/schema-naming-convention.md`
-14. `docs/lark-base-schema.md`
-15. `docs/setup.md`
-16. current PR #1 exact HEAD + CI evidence
+3. latest PR #1 exact HEAD + CI evidence
+4. `deploy/product-manifest.json`
+5. `deploy/lark-base-contract.json`
+6. `deploy/lark-base-ux-contract.json`
+7. `docs/requirements-authority.md`
+8. `docs/customer-deployment-model.md`
+9. `docs/single-stack-delivery.md`
+10. `docs/setup.md`
