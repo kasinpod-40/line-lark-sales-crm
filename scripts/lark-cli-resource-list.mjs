@@ -45,3 +45,28 @@ export function resourceMapFromList(payload, { collectionKeys, nameKeys, idKeys,
   }
   return map;
 }
+
+export function resolveCanonicalNamedResource(resources, canonicalName, label = "resource") {
+  if (!(resources instanceof Map)) throw new Error(`${label} resources must be a Map`);
+  const canonical = String(canonicalName || "").trim();
+  if (!canonical) throw new Error(`${label} canonical name cannot be blank`);
+
+  const matches = [];
+  for (const [displayName, meta] of resources.entries()) {
+    const liveName = String(displayName || "").trim();
+    // Golden Base presentation may prefix canonical table names with an emoji,
+    // e.g. "👥 Customers". Keep the schema's canonical name stable while
+    // resolving the exact live resource ID. A suffix match must be separated by
+    // whitespace and is fail-closed if more than one live resource matches.
+    if (liveName === canonical || liveName.endsWith(` ${canonical}`)) {
+      matches.push({ displayName: liveName, id: String(meta?.id || "").trim(), raw: meta?.raw });
+    }
+  }
+
+  if (matches.length !== 1) {
+    const available = [...resources.keys()].map((name) => JSON.stringify(name)).join(", ");
+    throw new Error(`Could not uniquely resolve ${label} ${canonical}; matches=${matches.length}; available=[${available}]`);
+  }
+  if (!matches[0].id) throw new Error(`${label} ${matches[0].displayName} resolved without a concrete id`);
+  return matches[0];
+}
