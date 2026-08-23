@@ -51,14 +51,21 @@ test('lifecycle reconcile and QR recovery operators use resolved concrete table 
   for (const source of [reconcile, recovery]) {
     assert.match(source, /resolveCanonicalNamedResource/);
     assert.match(source, /\+table-list/);
-    assert.match(source, /live_table_resolution: "exact_id_from_table_list"/);
   }
 
+  assert.match(reconcile, /live_table_resolution: "exact_id_from_table_list"/);
   assert.match(reconcile, /"--table-id", table\.id/);
   assert.match(reconcile, /"--field-id", field\.id/);
   assert.doesNotMatch(reconcile, /"--table-id", target\.table/);
 
+  assert.match(recovery, /record_resolution: "d1_exact_record_ids_plus_local_ndjson_readback"/);
   assert.match(recovery, /"--table-id", table\.id/);
+  assert.match(recovery, /customer_record_id/);
+  assert.match(recovery, /tracking_record_id/);
+  assert.match(recovery, /deal_record_id/);
+  assert.match(recovery, /--output/);
+  assert.match(recovery, /--minimal-stdout/);
+  assert.doesNotMatch(recovery, /--filter-json/);
   assert.doesNotMatch(recovery, /listByFilter\(args\.baseToken, "Customers"/);
   assert.doesNotMatch(recovery, /batchUpdate\(args\.baseToken, "Sales_Deals"/);
 });
