@@ -5,12 +5,14 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'src/ai/image-ai.service.ts'), 'utf8');
+const cardSource = fs.readFileSync(path.join(root, 'src/providers/lark/payment-slip.card.ts'), 'utf8');
 const envSource = fs.readFileSync(path.join(root, 'src/config/env.ts'), 'utf8');
 const validation = fs.readFileSync(path.join(root, 'src/config/validation.ts'), 'utf8');
 const wranglerExample = fs.readFileSync(path.join(root, 'wrangler.jsonc.example'), 'utf8');
 
-test('payment-slip image analysis uses Gemini 3.7 Flash multimodal structured output', () => {
-  assert.match(source, /gemini-3\.7-flash/);
+test('payment-slip image analysis uses Gemini multimodal structured output with low thinking', () => {
+  assert.match(source, /DEFAULT_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.6-flash"/);
+  assert.match(source, /FALLBACK_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.7-flash"/);
   assert.match(source, /LEGACY_GEMINI_IMAGE_MODEL\s*=\s*"gemini-2\.5-flash"/);
   assert.match(source, /configured === LEGACY_GEMINI_IMAGE_MODEL/);
   assert.match(source, /generativelanguage\.googleapis\.com\/v1beta\/models/);
@@ -28,19 +30,28 @@ test('payment-slip image analysis uses Gemini 3.7 Flash multimodal structured ou
   assert.doesNotMatch(source, /env\.AI!?\.run|@cf\/moondream|@cf\/meta\/llama-3\.2-11b-vision-instruct/);
 });
 
-test('Gemini image capacity errors retry with 3.6 Flash fallback', () => {
-  assert.match(source, /FALLBACK_GEMINI_IMAGE_MODEL\s*=\s*"gemini-3\.6-flash"/);
+test('Gemini image capacity errors fail over immediately instead of sleeping and retrying the same model', () => {
   assert.match(source, /RETRYABLE_GEMINI_STATUSES\s*=\s*new Set\(\[429, 500, 502, 503, 504\]\)/);
-  assert.match(source, /AI_IMAGE_RETRY/);
-  assert.match(source, /await sleep\(delayMs\)/);
-  assert.match(source, /primaryModel === FALLBACK_GEMINI_IMAGE_MODEL/);
-  assert.match(source, /attempt < 2/);
+  assert.match(source, /AI_IMAGE_FAILOVER/);
+  assert.match(source, /from_model/);
+  assert.match(source, /to_model/);
+  assert.match(source, /AI_IMAGE_SUCCESS/);
+  assert.match(source, /elapsed_ms/);
+  assert.doesNotMatch(source, /function sleep|retryDelayMs|attempt < 2|AI_IMAGE_RETRY/);
+});
+
+test('payment slip fast-path card is a neutral progress state and final buttons fit narrow Lark cards', () => {
+  assert.match(cardSource, /template:\s*"blue"/);
+  assert.match(cardSource, /กำลังตรวจหลักฐานการชำระเงิน/);
+  assert.match(cardSource, /"⚠️ ยืนยันรับเงิน"/);
+  assert.match(cardSource, /"✅ ยืนยันรับเงิน"/);
+  assert.doesNotMatch(cardSource, /ตรวจแล้ว ยืนยันรับชำระ|ตรวจเองแล้ว ยืนยันรับชำระ/);
 });
 
 test('Gemini image secret and current model are explicit reusable install configuration', () => {
   assert.match(envSource, /GEMINI_API_KEY\?: string/);
   assert.match(envSource, /GEMINI_IMAGE_MODEL\?: string/);
-  assert.match(wranglerExample, /"GEMINI_IMAGE_MODEL": "gemini-3\.7-flash"/);
+  assert.match(wranglerExample, /"GEMINI_IMAGE_MODEL": "gemini-3\.6-flash"/);
   assert.doesNotMatch(wranglerExample, /AI_VISION_MODEL/);
   assert.match(validation, /gemini_image_ai/);
   assert.match(validation, /GEMINI_IMAGE_AI_NOT_CONFIGURED/);
