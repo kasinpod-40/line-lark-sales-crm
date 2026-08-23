@@ -6,13 +6,21 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('payment slip review card is manual-only and routes through existing close confirmation', () => {
+test('payment slip review shows both amounts, comparison result and two horizontal manual actions', () => {
   const source = read('src/providers/lark/payment-slip.card.ts');
   assert.match(source, /ตรวจสอบหลักฐานการชำระเงิน/);
-  assert.match(source, /AI ไม่ได้ยืนยันธุรกรรมธนาคาร/);
-  assert.match(source, /ยอดในสลิปไม่ตรง Deal/);
-  assert.match(source, /close_deal_prompt/);
-  assert.doesNotMatch(source, /confirm_close_deal/);
+  assert.match(source, /ยอดที่ต้องชำระ:/);
+  assert.match(source, /ยอดในสลิป:/);
+  assert.match(source, /ยอดชำระเงินถูกต้อง/);
+  assert.match(source, /ยอดชำระเงินไม่ตรง/);
+  assert.match(source, /AI ช่วยอ่านภาพและเทียบยอดเท่านั้น/);
+  assert.match(source, /twoColumns\(/);
+  const confirmAt = source.indexOf('"✅ ยืนยันรับชำระ"');
+  const rejectAt = source.indexOf('"❌ ไม่ถูกต้อง"');
+  assert.ok(confirmAt >= 0 && rejectAt > confirmAt, 'confirm and reject must share the two-column action row');
+  assert.match(source, /confirm_slip_payment/);
+  assert.match(source, /reject_payment_slip/);
+  assert.doesNotMatch(source, /close_deal_prompt/);
 });
 
 test('existing Payment case delivers image before waiting for vision inference and enriches one review card', () => {
@@ -28,4 +36,26 @@ test('existing Payment case delivers image before waiting for vision inference a
   assert.match(source, /patchCard\(earlySlipReviewMessageId, reviewCard\)/);
   assert.match(source, /ลูกค้าส่งสลิป\/หลักฐานการชำระเงิน กรุณาตรวจสอบความถูกต้อง/);
   assert.match(source, /ai\.intent === "payment_slip" \|\| route\.status === "PAYMENT"/);
+});
+
+test('slip confirm uses persisted deal amount and reject does not mutate commercial state', () => {
+  const source = read('src/services/payment-slip-action.service.ts');
+  assert.match(source, /PAYMENT_SLIP_ACTIONS/);
+  assert.match(source, /confirm_slip_payment/);
+  assert.match(source, /reject_payment_slip/);
+  assert.match(source, /const amount = latest\?\.deal\.payment_amount \?\? latest\?\.deal\.total_amount \?\? 0/);
+  assert.match(source, /await this\.base\.closeDeal\(latest\.recordId, amount\)/);
+  assert.match(source, /await this\.base\.markCustomerActive/);
+  assert.match(source, /paymentConfirmationFlex/);
+  const rejectStart = source.indexOf('event.action === "reject_payment_slip"');
+  const confirmStart = source.indexOf('event.action !== "confirm_slip_payment"');
+  assert.ok(rejectStart >= 0 && confirmStart > rejectStart);
+  const rejectBlock = source.slice(rejectStart, confirmStart);
+  assert.doesNotMatch(rejectBlock, /closeDeal|markCustomerActive|setCaseStatus/);
+});
+
+test('Lark webhook isolates slip review actions from generic card handlers', () => {
+  const source = read('src/routes/lark/webhook.route.ts');
+  assert.match(source, /PAYMENT_SLIP_ACTIONS\.has\(event\.action\)/);
+  assert.match(source, /new PaymentSlipActionService\(env\)\.handle\(event\)/);
 });
