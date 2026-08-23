@@ -123,6 +123,7 @@ export class CardActionService {
         const draftId = asString(event.value.draft_id);
         const draft = draftId ? await this.operational.getDraft<unknown>(draftId) : null;
         if (!draft) {
+          if (event.messageId) await this.lark.patchCard(event.messageId, buildCancelledDraftCard());
           await this.operational.completeAction(actionKey);
           return;
         }
