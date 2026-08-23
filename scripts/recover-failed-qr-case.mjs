@@ -6,22 +6,27 @@ import { spawnSync } from "node:child_process";
 import { resourceMapFromList, resolveCanonicalNamedResource } from "./lark-cli-resource-list.mjs";
 
 function parseArgs(argv) {
-  const out = { apply: false, baseToken: "", caseId: "", database: "line-lark-sales-crm" };
+  const out = { apply: false, baseToken: "", caseId: "", databaseId: "", database: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") out.apply = true;
     else if (arg === "--base-token") out.baseToken = argv[++i] || "";
     else if (arg === "--case-id") out.caseId = argv[++i] || "";
+    else if (arg === "--database-id") out.databaseId = argv[++i] || "";
     else if (arg === "--database") out.database = argv[++i] || "";
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node scripts/recover-failed-qr-case.mjs [--apply] --base-token <token> --case-id <case_id> [--database line-lark-sales-crm]\nDefault is read-only plan. Apply is fail-closed and rolls back only the named Open QR-test case to the last verified QUOTED state. Live emoji-prefixed table names are resolved to exact IDs, records are exported to NDJSON and matched locally, and D1 is read back as JSON.");
+      console.log("Usage: node scripts/recover-failed-qr-case.mjs [--apply] --base-token <token> --case-id <case_id> --database-id <d1_uuid> [--database <legacy_name>]\nDefault is read-only plan. Apply is fail-closed and rolls back only the named Open QR-test case to the last verified QUOTED state. Exact D1 UUID is preferred and used for every D1 read/write/readback; live emoji-prefixed Lark tables resolve to exact IDs and records are matched locally from NDJSON exports.");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!out.baseToken.trim()) throw new Error("--base-token is required");
   if (!out.caseId.trim()) throw new Error("--case-id is required");
   if (!/^case_[A-Za-z0-9-]+$/.test(out.caseId)) throw new Error("--case-id has unexpected format");
-  if (!/^[A-Za-z0-9_-]+$/.test(out.database)) throw new Error("--database has unexpected format");
+  if (out.databaseId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(out.databaseId)) {
+    throw new Error("--database-id must be a D1 UUID");
+  }
+  if (out.database && !/^[A-Za-z0-9_-]+$/.test(out.database)) throw new Error("--database has unexpected format");
+  if (!out.databaseId && !out.database) throw new Error("--database-id is required (legacy --database name is accepted only as fallback)");
   return out;
 }
 
@@ -152,9 +157,9 @@ function batchUpdate(baseToken, table, recordId, fields) {
   assertMutationAccepted(result, `Update ${table.displayName}.${recordId}`);
 }
 
-function wranglerD1Json(database, sql, label) {
+function wranglerD1Json(databaseRef, sql, label) {
   const result = spawnSync("npx", [
-    "wrangler", "d1", "execute", database,
+    "wrangler", "d1", "execute", databaseRef,
     "--remote",
     "--command", sql,
     "--json",
@@ -181,10 +186,10 @@ function collectD1Routes(value, out = []) {
   return out;
 }
 
-function d1Route(database, caseId) {
+function d1Route(databaseRef, caseId) {
   const escaped = caseId.replaceAll("'", "''");
   const payload = wranglerD1Json(
-    database,
+    databaseRef,
     `SELECT case_id,line_user_id,customer_id,customer_record_id,tracking_record_id,deal_record_id,status FROM case_routes WHERE case_id='${escaped}' LIMIT 1;`,
     "Read D1 case route",
   );
@@ -215,6 +220,8 @@ const DEAL_FIELDS = ["deal_id", "case_id", "customer_id", "deal_status", "pipeli
 
 const args = parseArgs(process.argv.slice(2));
 verifyAuth();
+const databaseRef = args.databaseId || args.database;
+const d1Resolution = args.databaseId ? "exact_database_uuid" : "legacy_database_name";
 const tempDir = `.tmp-failed-qr-recovery-${process.pid}`;
 mkdirSync(tempDir, { recursive: true });
 
@@ -223,7 +230,7 @@ try {
   const customersTable = resolveCanonicalNamedResource(liveTables, "Customers", "table");
   const chatTable = resolveCanonicalNamedResource(liveTables, "Chat_Tracking", "table");
   const dealsTable = resolveCanonicalNamedResource(liveTables, "Sales_Deals", "table");
-  const d1Before = d1Route(args.database, args.caseId);
+  const d1Before = d1Route(databaseRef, args.caseId);
 
   if (!["PAYMENT", "QUOTED"].includes(String(d1Before.status))) {
     throw new Error(`Refusing recovery: D1 status=${String(d1Before.status)}; expected PAYMENT/QUOTED`);
@@ -299,6 +306,7 @@ try {
       mutation_count: 0,
       case_id: args.caseId,
       customer_id: d1Before.customer_id,
+      d1_resolution: d1Resolution,
       record_resolution: "d1_exact_record_ids_plus_local_ndjson_readback",
       resolved_tables: resolvedTables,
       records: {
@@ -341,7 +349,7 @@ try {
   if (planned.d1) {
     const escapedCaseId = args.caseId.replaceAll("'", "''");
     wranglerD1Json(
-      args.database,
+      databaseRef,
       `UPDATE case_routes SET status='QUOTED', card_version=card_version+1, updated_at=${Date.now()} WHERE case_id='${escapedCaseId}' AND status='PAYMENT';`,
       "Reset D1 case route",
     );
@@ -354,7 +362,7 @@ try {
   const customerAfter = exactOne(customerAfterRows.filter((row) => row.record_id === customerRow.record_id), "Customers readback");
   const caseAfter = exactOne(caseAfterRows.filter((row) => row.record_id === caseRow.record_id), "Chat_Tracking readback");
   const dealAfter = exactOne(dealAfterRows.filter((row) => row.record_id === dealRow.record_id), "Sales_Deals readback");
-  const d1After = d1Route(args.database, args.caseId);
+  const d1After = d1Route(databaseRef, args.caseId);
 
   const actual = {
     customer_stage: fieldText(customerAfter, "customer_stage"),
@@ -390,6 +398,7 @@ try {
     mutation_count: mutationCount,
     case_id: args.caseId,
     customer_id: d1Before.customer_id,
+    d1_resolution: d1Resolution,
     record_resolution: "d1_exact_record_ids_plus_local_ndjson_readback",
     resolved_tables: resolvedTables,
     before,
