@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHash, createCipheriv } = require('node:crypto');
-const { handleLarkWebhook } = require('../.tmp-test/routes/lark/webhook.route.js');
+const { handleLarkWebhook, parseActionEvent } = require('../.tmp-test/routes/lark/webhook.route.js');
 
 function ctx() {
   return {
@@ -73,4 +73,32 @@ test('non-challenge Lark callbacks still require the configured verification tok
   assert.equal(response.status, 401);
   const body = await response.json();
   assert.equal(body.message, 'Invalid Lark verification token');
+});
+
+test('card action parser preserves open_message_id and submitted form values', () => {
+  const event = parseActionEvent({
+    header: { event_id: 'evt-add', event_type: 'card.action.trigger' },
+    event: {
+      operator: { operator_id: { open_id: 'ou_sales' } },
+      context: { open_message_id: 'om_quote_form', open_chat_id: 'oc_sales' },
+      action: {
+        tag: 'button',
+        name: 'quote_add_item',
+        value: { action: 'quote_add_item', case_id: 'case-1', item_count: '1' },
+        form_value: {
+          item_1_description: 'สินค้า A',
+          item_1_quantity: '2',
+          item_1_unit_price: '1000',
+        },
+      },
+    },
+  });
+
+  assert.ok(event);
+  assert.equal(event.eventId, 'evt-add');
+  assert.equal(event.operatorOpenId, 'ou_sales');
+  assert.equal(event.messageId, 'om_quote_form');
+  assert.equal(event.action, 'quote_add_item');
+  assert.equal(event.value.item_count, '1');
+  assert.equal(event.formValue.item_1_description, 'สินค้า A');
 });
