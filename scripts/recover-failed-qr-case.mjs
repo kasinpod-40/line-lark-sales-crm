@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { resourceMapFromList, resolveCanonicalNamedResource } from "./lark-cli-resource-list.mjs";
 
 function parseArgs(argv) {
   const out = { apply: false, baseToken: "", caseId: "", database: "line-lark-sales-crm" };
@@ -11,7 +12,7 @@ function parseArgs(argv) {
     else if (arg === "--case-id") out.caseId = argv[++i] || "";
     else if (arg === "--database") out.database = argv[++i] || "";
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node scripts/recover-failed-qr-case.mjs [--apply] --base-token <token> --case-id <case_id> [--database line-lark-sales-crm]\nDefault is read-only plan. Apply is fail-closed and only rolls back an Open PAYMENT/QR-Sent case to the last verified QUOTED state.");
+      console.log("Usage: node scripts/recover-failed-qr-case.mjs [--apply] --base-token <token> --case-id <case_id> [--database line-lark-sales-crm]\nDefault is read-only plan. Apply is fail-closed and only rolls back an Open PAYMENT/QR-Sent case to the last verified QUOTED state. Live emoji-prefixed table names are resolved to exact IDs first.");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -62,6 +63,13 @@ function verifyAuth() {
   }
 }
 
+function listTables(baseToken) {
+  return resourceMapFromList(
+    runLark(["base", "+table-list", "--base-token", baseToken], "List live Base tables"),
+    { collectionKeys: ["tables", "items"], nameKeys: ["name", "table_name"], idKeys: ["id", "table_id"], label: "table" },
+  );
+}
+
 function collectRecords(value, out = []) {
   if (Array.isArray(value)) {
     for (const item of value) collectRecords(item, out);
@@ -79,10 +87,10 @@ function listByFilter(baseToken, table, filter) {
   const payload = runLark([
     "base", "+record-list",
     "--base-token", baseToken,
-    "--table-id", table,
+    "--table-id", table.id,
     "--filter-json", JSON.stringify(filter),
     "--limit", "50",
-  ], `List ${table}`);
+  ], `List ${table.displayName}`);
   const records = collectRecords(payload);
   const unique = new Map(records.map((record) => [record.record_id, record]));
   return [...unique.values()];
@@ -104,19 +112,19 @@ function batchUpdate(baseToken, table, recordId, fields) {
   runLark([
     "base", "+record-batch-update",
     "--base-token", baseToken,
-    "--table-id", table,
+    "--table-id", table.id,
     "--json", JSON.stringify({ update_records: { [recordId]: fields } }),
-  ], `Update ${table}.${recordId}`);
+  ], `Update ${table.displayName}.${recordId}`);
 }
 
 function readback(baseToken, table, recordId) {
   const payload = runLark([
     "base", "+record-get",
     "--base-token", baseToken,
-    "--table-id", table,
+    "--table-id", table.id,
     "--record-id", recordId,
-  ], `Readback ${table}.${recordId}`);
-  return exactOne(collectRecords(payload), `Readback ${table}.${recordId}`);
+  ], `Readback ${table.displayName}.${recordId}`);
+  return exactOne(collectRecords(payload), `Readback ${table.displayName}.${recordId}`);
 }
 
 function wranglerD1(database, sql, label) {
@@ -133,13 +141,18 @@ function wranglerD1(database, sql, label) {
 const args = parseArgs(process.argv.slice(2));
 verifyAuth();
 
+const liveTables = listTables(args.baseToken);
+const customersTable = resolveCanonicalNamedResource(liveTables, "Customers", "table");
+const chatTable = resolveCanonicalNamedResource(liveTables, "Chat_Tracking", "table");
+const dealsTable = resolveCanonicalNamedResource(liveTables, "Sales_Deals", "table");
+
 const caseFilter = { logic: "and", conditions: [["case_id", "==", args.caseId]] };
-const chatRows = listByFilter(args.baseToken, "Chat_Tracking", caseFilter);
+const chatRows = listByFilter(args.baseToken, chatTable, caseFilter);
 const caseRow = exactOne(chatRows.filter((record) => fieldText(record, "record_type") === "CASE"), "Chat_Tracking CASE");
-const dealRow = exactOne(listByFilter(args.baseToken, "Sales_Deals", caseFilter), "Sales_Deals");
+const dealRow = exactOne(listByFilter(args.baseToken, dealsTable, caseFilter), "Sales_Deals");
 const customerId = fieldText(caseRow, "customer_id") || fieldText(dealRow, "customer_id");
 if (!customerId) throw new Error("Could not resolve customer_id from case/deal");
-const customerRow = exactOne(listByFilter(args.baseToken, "Customers", { logic: "and", conditions: [["customer_id", "==", customerId]] }), "Customers");
+const customerRow = exactOne(listByFilter(args.baseToken, customersTable, { logic: "and", conditions: [["customer_id", "==", customerId]] }), "Customers");
 
 const before = {
   customer_stage: fieldText(customerRow, "customer_stage"),
@@ -168,6 +181,12 @@ const target = {
   qr_sent_at: null,
 };
 
+const resolvedTables = {
+  Customers: { name: customersTable.displayName, id: customersTable.id },
+  Chat_Tracking: { name: chatTable.displayName, id: chatTable.id },
+  Sales_Deals: { name: dealsTable.displayName, id: dealsTable.id },
+};
+
 if (!args.apply) {
   console.log(JSON.stringify({
     ok: true,
@@ -175,6 +194,8 @@ if (!args.apply) {
     mutation_count: 0,
     case_id: args.caseId,
     customer_id: customerId,
+    live_table_resolution: "exact_id_from_table_list",
+    resolved_tables: resolvedTables,
     before,
     target,
     records: {
@@ -186,17 +207,17 @@ if (!args.apply) {
   process.exit(0);
 }
 
-batchUpdate(args.baseToken, "Customers", customerRow.record_id, {
+batchUpdate(args.baseToken, customersTable, customerRow.record_id, {
   customer_stage: target.customer_stage,
   lead_quality: target.customer_lead_quality,
   lead_score: 60,
   hot_lead: false,
 });
-batchUpdate(args.baseToken, "Chat_Tracking", caseRow.record_id, {
+batchUpdate(args.baseToken, chatTable, caseRow.record_id, {
   case_status: target.case_status,
   lead_quality: target.case_lead_quality,
 });
-batchUpdate(args.baseToken, "Sales_Deals", dealRow.record_id, {
+batchUpdate(args.baseToken, dealsTable, dealRow.record_id, {
   pipeline_stage: target.pipeline_stage,
   payment_status: target.payment_status,
   qr_sent_at: null,
@@ -209,9 +230,9 @@ wranglerD1(
   "Reset D1 case route",
 );
 
-const customerAfter = readback(args.baseToken, "Customers", customerRow.record_id);
-const caseAfter = readback(args.baseToken, "Chat_Tracking", caseRow.record_id);
-const dealAfter = readback(args.baseToken, "Sales_Deals", dealRow.record_id);
+const customerAfter = readback(args.baseToken, customersTable, customerRow.record_id);
+const caseAfter = readback(args.baseToken, chatTable, caseRow.record_id);
+const dealAfter = readback(args.baseToken, dealsTable, dealRow.record_id);
 const actual = {
   customer_stage: fieldText(customerAfter, "customer_stage"),
   customer_lead_quality: fieldText(customerAfter, "lead_quality"),
@@ -239,6 +260,8 @@ console.log(JSON.stringify({
   mode: "apply",
   mutation_count: 4,
   case_id: args.caseId,
+  live_table_resolution: "exact_id_from_table_list",
+  resolved_tables: resolvedTables,
   before,
   after: actual,
   status: "FAILED_QR_TEST_ROLLED_BACK_TO_LAST_VERIFIED_QUOTED_STATE",
