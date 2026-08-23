@@ -60,6 +60,29 @@ function terminalCard(template: "green" | "grey", title: string, content: string
 
 export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): unknown {
   const hasSlipAmount = typeof input.slipAmount === "number" && Number.isFinite(input.slipAmount) && input.slipAmount >= 0;
+
+  // Fast-path card is a neutral progress state only. Do not show a yellow
+  // manual-review verdict for a few seconds and then flash to the final color.
+  if (!input.aiDetected && !hasSlipAmount) {
+    return {
+      schema: "2.0",
+      config: {
+        update_multi: true,
+        width_mode: "fill",
+        summary: { content: `กำลังตรวจสลิป • ยอด Deal ฿${formatMoney(input.dealAmount)}` },
+      },
+      header: {
+        template: "blue",
+        title: { tag: "plain_text", content: "🧾 กำลังตรวจหลักฐานการชำระเงิน" },
+      },
+      body: {
+        elements: [
+          md(`ได้รับรูปแล้ว กำลังอ่านยอดและเทียบกับยอด Deal **฿${formatMoney(input.dealAmount)}**\nกรุณารอผลตรวจสักครู่`),
+        ],
+      },
+    };
+  }
+
   const matches = hasSlipAmount && input.dealAmount > 0 && Math.abs((input.slipAmount ?? 0) - input.dealAmount) <= 0.01;
   const mismatch = hasSlipAmount && input.dealAmount > 0 && !matches;
   const verdict: SlipVerdict = matches ? "match" : mismatch ? "mismatch" : "manual_review";
@@ -77,11 +100,7 @@ export function buildPaymentSlipReviewCard(input: PaymentSlipReviewCardInput): u
       ? "⚠️ **ยอดชำระเงินไม่ตรง — ยอดในสลิปไม่ตรงกับยอด Deal กรุณาตรวจสอบก่อนตัดสินใจ**"
       : "⚠️ **AI ยังเทียบยอดไม่ได้ — กรุณาตรวจจากภาพสลิปจริง**";
   const bankLine = input.slipBank ? `\nธนาคารที่ AI อ่านได้: **${input.slipBank}**` : "";
-  const confirmLabel = mismatch
-    ? "⚠️ ตรวจแล้ว ยืนยันรับชำระ"
-    : matches
-      ? "✅ ยืนยันรับชำระ"
-      : "✅ ตรวจเองแล้ว ยืนยันรับชำระ";
+  const confirmLabel = mismatch ? "⚠️ ยืนยันรับเงิน" : "✅ ยืนยันรับเงิน";
 
   return {
     schema: "2.0",
