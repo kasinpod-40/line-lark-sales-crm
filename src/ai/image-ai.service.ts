@@ -4,7 +4,9 @@ import { asNumber, asString, isRecord } from "../utils/json";
 
 const LEGACY_GEMINI_IMAGE_MODEL = "gemini-2.5-flash";
 const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.7-flash";
+const FALLBACK_GEMINI_IMAGE_MODEL = "gemini-3.6-flash";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const RETRYABLE_GEMINI_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const IMAGE_ANALYSIS_JSON_SCHEMA = {
   type: "object",
@@ -105,6 +107,20 @@ function safeFallback(reason: string): ImageAnalysisResult {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(modelIndex: number, attempt: number): number {
+  if (modelIndex === 0 && attempt === 1) return 400;
+  if (modelIndex === 1 && attempt === 0) return 700;
+  return 1200;
+}
+
+function hasAnotherAttempt(modelIndex: number, attempt: number, modelCount: number): boolean {
+  return attempt === 0 || modelIndex + 1 < modelCount;
+}
+
 export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: string): Promise<ImageAnalysisResult> {
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) return safeFallback("GEMINI_API_KEY is not configured");
@@ -114,57 +130,97 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
   if (bytes.byteLength === 0) return safeFallback("Image is empty");
   if (bytes.byteLength > MAX_IMAGE_BYTES) return safeFallback(`Image is too large for Gemini analysis: ${bytes.byteLength} bytes`);
 
-  const model = resolveGeminiImageModel(env);
-  let response: Response;
-  try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [
-              { text: IMAGE_AI_PROMPT },
-              {
-                inlineData: {
-                  mimeType: normalizedMime,
-                  data: arrayBufferToBase64(bytes),
-                },
+  const primaryModel = resolveGeminiImageModel(env);
+  const models = primaryModel === FALLBACK_GEMINI_IMAGE_MODEL
+    ? [primaryModel]
+    : [primaryModel, FALLBACK_GEMINI_IMAGE_MODEL];
+  const encodedImage = arrayBufferToBase64(bytes);
+  let successfulBody: unknown | null = null;
+  let lastError = "Gemini image analysis failed without a response";
+
+  outer: for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
+    const model = models[modelIndex];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const delayMs = retryDelayMs(modelIndex, attempt);
+      if (modelIndex > 0 || attempt > 0) await sleep(delayMs);
+
+      let response: Response;
+      try {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey,
+            },
+            body: JSON.stringify({
+              contents: [{
+                role: "user",
+                parts: [
+                  { text: IMAGE_AI_PROMPT },
+                  {
+                    inlineData: {
+                      mimeType: normalizedMime,
+                      data: encodedImage,
+                    },
+                  },
+                ],
+              }],
+              generationConfig: {
+                maxOutputTokens: 768,
+                thinkingConfig: { thinkingLevel: "low" },
+                responseMimeType: "application/json",
+                responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
               },
-            ],
-          }],
-          generationConfig: {
-            maxOutputTokens: 768,
-            thinkingConfig: { thinkingLevel: "low" },
-            responseMimeType: "application/json",
-            responseJsonSchema: IMAGE_ANALYSIS_JSON_SCHEMA,
+            }),
           },
-        }),
-      },
-    );
-  } catch (error) {
-    return safeFallback(`Gemini network error: ${error instanceof Error ? error.message : String(error)}`);
+        );
+      } catch (error) {
+        lastError = `Gemini network error: ${error instanceof Error ? error.message : String(error)}`;
+        if (hasAnotherAttempt(modelIndex, attempt, models.length)) {
+          console.warn("AI_IMAGE_RETRY", JSON.stringify({
+            provider: "gemini",
+            model,
+            status: "network",
+            attempt: attempt + 1,
+          }));
+          continue;
+        }
+        break outer;
+      }
+
+      const bodyText = await response.text();
+      let body: unknown = {};
+      try {
+        body = bodyText ? JSON.parse(bodyText) : {};
+      } catch {
+        body = { raw: bodyText.slice(0, 500) };
+      }
+
+      if (response.ok) {
+        successfulBody = body;
+        break outer;
+      }
+
+      lastError = `Gemini HTTP ${response.status}: ${JSON.stringify(body).slice(0, 400)}`;
+      if (RETRYABLE_GEMINI_STATUSES.has(response.status) && hasAnotherAttempt(modelIndex, attempt, models.length)) {
+        console.warn("AI_IMAGE_RETRY", JSON.stringify({
+          provider: "gemini",
+          model,
+          status: response.status,
+          attempt: attempt + 1,
+        }));
+        continue;
+      }
+      break outer;
+    }
   }
 
-  const bodyText = await response.text();
-  let body: unknown = {};
-  try {
-    body = bodyText ? JSON.parse(bodyText) : {};
-  } catch {
-    body = { raw: bodyText.slice(0, 500) };
-  }
+  if (successfulBody === null) return safeFallback(lastError);
 
-  if (!response.ok) {
-    return safeFallback(`Gemini HTTP ${response.status}: ${JSON.stringify(body).slice(0, 400)}`);
-  }
-
-  const raw = extractGeminiText(body);
-  if (!raw) return safeFallback(`Gemini returned empty response (finishReason=${extractFinishReason(body)})`);
+  const raw = extractGeminiText(successfulBody);
+  if (!raw) return safeFallback(`Gemini returned empty response (finishReason=${extractFinishReason(successfulBody)})`);
 
   try {
     const parsed = parseJsonObject(raw);
