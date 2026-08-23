@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   buildCaseCard,
   buildQuoteFormCard,
+  buildQuoteItemCountCard,
   buildPaymentFormCard,
   buildCampaignFormCard,
   buildThreadGuardWarningCard,
@@ -109,6 +110,31 @@ test('root-chat guard warning is Card 2.0 and explicitly says message was not se
   assert.equal(card.header.template, 'orange');
   assert.match(cardText(card), /ไม่ได้ส่งไป LINE/);
   assert.match(cardText(card), /Reply in Thread/);
+});
+
+test('quote flow asks item count before opening a long form', () => {
+  const chooser = buildQuoteItemCountCard('case-1');
+  assertCard2(chooser);
+  assert.deepEqual(actionNames(chooser), [
+    'open_quote_form_count',
+    'open_quote_form_count',
+    'open_quote_form_count',
+    'open_quote_form_count',
+    'open_quote_form_count',
+  ]);
+  assert.match(cardText(chooser), /1 รายการ/);
+  assert.match(cardText(chooser), /5 รายการ/);
+});
+
+test('quote form defaults to one item and renders only selected item count', () => {
+  const one = buildQuoteFormCard('case-1', 7);
+  const three = buildQuoteFormCard('case-1', 7, 3);
+  assert.match(cardText(one), /รายการ 1/);
+  assert.doesNotMatch(cardText(one), /รายการ 2/);
+  assert.match(cardText(three), /รายการ 1/);
+  assert.match(cardText(three), /รายการ 2/);
+  assert.match(cardText(three), /รายการ 3/);
+  assert.doesNotMatch(cardText(three), /รายการ 4/);
 });
 
 test('Card 2.0 forms use form_action_type submit and callback behavior', () => {
