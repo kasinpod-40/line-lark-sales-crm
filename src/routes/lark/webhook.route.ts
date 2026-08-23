@@ -2,6 +2,7 @@ import type { Env } from "../../config/env";
 import type { WorkerExecutionContext } from "../../platform/cloudflare";
 import { CardActionService, type CardActionEvent } from "../../services/card-action.service";
 import { PaymentCardActionService, SINGLE_CARD_PAYMENT_ACTIONS } from "../../services/payment-card-action.service";
+import { PaymentSlipActionService, PAYMENT_SLIP_ACTIONS } from "../../services/payment-slip-action.service";
 import { CommercialLifecycleService } from "../../services/commercial-lifecycle.service";
 import { LarkEventService, type LarkMessageEvent } from "../../services/lark-event.service";
 import { decryptLarkPayload } from "../../providers/lark/lark.client";
@@ -83,19 +84,28 @@ export function parseActionEvent(body: UnknownRecord): CardActionEvent | null {
   };
 }
 
+async function reconcileCommercialLifecycle(env: Env, event: CardActionEvent): Promise<void> {
+  const caseId = asString(event.value.case_id).trim();
+  if (!caseId) return;
+  await new CommercialLifecycleService(env).reconcileCase(caseId).catch((error) => {
+    console.error("COMMERCIAL_LIFECYCLE_RECONCILE_FAILED", error instanceof Error ? error.message : String(error));
+  });
+}
+
 async function handleCardAction(env: Env, event: CardActionEvent): Promise<void> {
   if (SINGLE_CARD_PAYMENT_ACTIONS.has(event.action)) {
     await new PaymentCardActionService(env).handle(event);
     return;
   }
 
-  await new CardActionService(env).handle(event);
-  const caseId = asString(event.value.case_id).trim();
-  if (caseId) {
-    await new CommercialLifecycleService(env).reconcileCase(caseId).catch((error) => {
-      console.error("COMMERCIAL_LIFECYCLE_RECONCILE_FAILED", error instanceof Error ? error.message : String(error));
-    });
+  if (PAYMENT_SLIP_ACTIONS.has(event.action)) {
+    await new PaymentSlipActionService(env).handle(event);
+    await reconcileCommercialLifecycle(env, event);
+    return;
   }
+
+  await new CardActionService(env).handle(event);
+  await reconcileCommercialLifecycle(env, event);
 }
 
 export async function handleLarkWebhook(request: Request, env: Env, ctx: WorkerExecutionContext): Promise<Response> {
