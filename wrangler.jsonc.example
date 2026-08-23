@@ -20,7 +20,7 @@
     "VIP_GOLD_MIN_THB": "",
     "VIP_DIAMOND_MIN_THB": "",
     "AI_TEXT_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
-    "GEMINI_IMAGE_MODEL": "gemini-2.5-flash"
+    "GEMINI_IMAGE_MODEL": "gemini-3.7-flash"
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "line-lark-sales-crm", "database_id": "REPLACE_D1_ID" }
