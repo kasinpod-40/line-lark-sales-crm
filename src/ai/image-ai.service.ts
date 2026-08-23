@@ -29,14 +29,23 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
   try {
     const model = env.AI_VISION_MODEL?.trim() || "@cf/meta/llama-3.2-11b-vision-instruct";
     const dataUri = `data:${mimeType};base64,${arrayBufferToBase64(bytes)}`;
+    const prompt = [
+      "Analyze this image for a Thai LINE sales CRM.",
+      "Return one JSON object only, with no markdown.",
+      "Fields: image_type payment_slip|product_image|other_image|unknown; summary Thai; slip_amount number only when visibly readable; slip_bank string only when visibly readable; confidence 0-1.",
+      "For a Thai bank transfer/payment slip, classify image_type as payment_slip and carefully read the transferred amount shown on the slip.",
+      "Do not guess unreadable payment data and do not treat QR payload text as the transferred amount.",
+    ].join(" ");
+
+    // Workers AI native vision contract: the image is a top-level input. Do not
+    // use OpenAI-style image_url blocks here; that shape can be accepted by an
+    // OpenAI-compatible endpoint but is not the binding contract for this model.
     const output = await env.AI.run(model, {
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: "Analyze this image for a Thai LINE sales CRM. Return JSON only: image_type payment_slip|product_image|other_image|unknown, summary Thai, slip_amount number if visibly present, slip_bank string if visibly present, confidence 0-1. Do not guess unreadable payment data." },
-          { type: "image_url", image_url: { url: dataUri } },
-        ],
-      }],
+      messages: [
+        { role: "system", content: "You extract payment-slip facts accurately and return strict JSON." },
+        { role: "user", content: prompt },
+      ],
+      image: dataUri,
       max_tokens: 350,
       temperature: 0.1,
     });
@@ -47,7 +56,9 @@ export async function analyzeImage(env: Env, bytes: ArrayBuffer, mimeType: strin
     const parsed: unknown = JSON.parse(text.slice(start, end + 1));
     if (!isRecord(parsed)) throw new Error("Vision JSON is not an object");
     const rawType = asString(parsed.image_type);
-    const imageType: ImageAnalysisResult["image_type"] = ["payment_slip","product_image","other_image","unknown"].includes(rawType) ? rawType as ImageAnalysisResult["image_type"] : "unknown";
+    const imageType: ImageAnalysisResult["image_type"] = ["payment_slip", "product_image", "other_image", "unknown"].includes(rawType)
+      ? rawType as ImageAnalysisResult["image_type"]
+      : "unknown";
     const amount = asNumber(parsed.slip_amount, -1);
     return {
       image_type: imageType,
