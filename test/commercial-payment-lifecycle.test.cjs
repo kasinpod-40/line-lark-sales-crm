@@ -60,6 +60,15 @@ test('QR public asset supports LINE-friendly GET and HEAD metadata', () => {
   assert.match(source, /request\.method === "HEAD"/);
 });
 
+test('QR encoder normalizes qrcode CommonJS interop for Cloudflare Workers', () => {
+  const source = read('src/routes/assets/qr.route.ts');
+  assert.match(source, /const qrModule = await import\("qrcode"\)/);
+  assert.match(source, /typeof qrModule\.toBuffer === "function" \? qrModule : qrModule\.default/);
+  assert.match(source, /typeof qrEncoder\.toBuffer !== "function"/);
+  assert.match(source, /await qrEncoder\.toBuffer\(/);
+  assert.doesNotMatch(source, /const png = await qr\.toBuffer\(/);
+});
+
 test('commercial lifecycle floors Quote and Payment and prevents inbound demotion', () => {
   const lifecycle = read('src/services/commercial-lifecycle.service.ts');
   assert.match(lifecycle, /PAYMENT: "💳 Payment Pending"/);
