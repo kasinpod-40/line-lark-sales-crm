@@ -126,6 +126,15 @@ function isClosedWon(value: unknown): boolean {
   return CLOSED_WON_VALUES.has(asString(value));
 }
 
+function numericCell(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/,/g, "").trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
 function dealFromRecord(record: BaseRecord): DealSnapshot {
   const f = record.fields;
   return {
@@ -137,20 +146,20 @@ function dealFromRecord(record: BaseRecord): DealSnapshot {
     quotation_no: asString(f.quotation_no) || undefined,
     quotation_status: asString(f.quotation_status) || undefined,
     quotation_items_json: asString(f.quotation_items_json) || undefined,
-    subtotal: typeof f.subtotal === "number" ? f.subtotal : undefined,
-    discount: typeof f.discount === "number" ? f.discount : undefined,
-    vat_rate: typeof f.vat_rate === "number" ? f.vat_rate : undefined,
-    vat_amount: typeof f.vat_amount === "number" ? f.vat_amount : undefined,
-    shipping_fee: typeof f.shipping_fee === "number" ? f.shipping_fee : undefined,
-    total_amount: typeof f.total_amount === "number" ? f.total_amount : typeof f.deal_value_thb === "number" ? f.deal_value_thb : undefined,
+    subtotal: numericCell(f.subtotal),
+    discount: numericCell(f.discount),
+    vat_rate: numericCell(f.vat_rate),
+    vat_amount: numericCell(f.vat_amount),
+    shipping_fee: numericCell(f.shipping_fee),
+    total_amount: numericCell(f.total_amount) ?? numericCell(f.deal_value_thb),
     quotation_note: asString(f.quotation_note) || undefined,
     quotation_valid_until: asString(f.quotation_valid_until) || undefined,
-    quotation_sent_at: typeof f.quotation_sent_at === "number" ? f.quotation_sent_at : undefined,
-    payment_amount: typeof f.payment_amount === "number" ? f.payment_amount : undefined,
+    quotation_sent_at: numericCell(f.quotation_sent_at),
+    payment_amount: numericCell(f.payment_amount),
     payment_status: asString(f.payment_status) || undefined,
-    qr_sent_at: typeof f.qr_sent_at === "number" ? f.qr_sent_at : undefined,
+    qr_sent_at: numericCell(f.qr_sent_at),
     deal_status: asString(f.deal_status) || undefined,
-    closed_at: typeof f.closed_at === "number" ? f.closed_at : undefined,
+    closed_at: numericCell(f.closed_at),
     created_at: asNumber(f.created_at),
     updated_at: asNumber(f.updated_at),
   };
@@ -390,8 +399,28 @@ export class LarkBaseRepository {
   }
 
   async getLatestDealForCase(caseId: string): Promise<{ recordId: string; deal: DealSnapshot } | null> {
+    const routeRow = await this.env.DB.prepare(
+      "SELECT deal_record_id FROM case_routes WHERE case_id=? LIMIT 1",
+    ).bind(caseId).first<UnknownRecord>();
+    const preferredRecordId = routeRow ? asString(routeRow.deal_record_id).trim() : "";
+
+    if (preferredRecordId) {
+      try {
+        const response = await baseFetch(
+          this.env,
+          `${this.tablePath(this.env.LARK_BASE_SALES_DEALS_TABLE_ID)}/${encodeURIComponent(preferredRecordId)}`,
+          { method: "GET" },
+        );
+        const record = normalizeRecord(dataOf(response).record);
+        if (record) return { recordId: record.record_id, deal: dealFromRecord(record) };
+      } catch (error) {
+        console.warn("DEAL_ROUTE_RECORD_LOOKUP_FALLBACK", error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const normalizedCaseId = caseId.trim();
     const all = await this.listAll(this.env.LARK_BASE_SALES_DEALS_TABLE_ID);
-    const matching = all.filter((record) => asString(record.fields.case_id) === caseId)
+    const matching = all.filter((record) => asString(record.fields.case_id).trim() === normalizedCaseId)
       .sort((a, b) => asNumber(b.fields.updated_at) - asNumber(a.fields.updated_at));
     const record = matching[0];
     return record ? { recordId: record.record_id, deal: dealFromRecord(record) } : null;
