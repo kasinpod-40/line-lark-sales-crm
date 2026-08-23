@@ -12,7 +12,6 @@ import {
   buildPaymentFormCard,
   buildPaymentPreviewCard,
   buildQuoteFormCard,
-  buildQuoteItemCountCard,
   buildQuotePreviewCard,
 } from "../providers/lark/lark.cards";
 import { LarkClient } from "../providers/lark/lark.client";
@@ -27,6 +26,7 @@ import { parseMoney } from "../utils/money";
 export interface CardActionEvent {
   eventId: string;
   operatorOpenId: string;
+  messageId?: string;
   action: string;
   value: UnknownRecord;
   formValue: UnknownRecord;
@@ -155,16 +155,26 @@ export class CardActionService {
 
         case "open_quote_form": {
           this.requireOwner(route, event.operatorOpenId);
-          await this.lark.replyCard(root, buildQuoteItemCountCard(route.case_id));
+          await this.lark.replyCard(
+            root,
+            buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), 1),
+          );
           break;
         }
 
-        case "open_quote_form_count": {
+        case "quote_add_item": {
           this.requireOwner(route, event.operatorOpenId);
-          const itemCount = Math.max(1, Math.min(5, Math.round(asNumber(event.value.item_count, 1))));
-          await this.lark.replyCard(
-            root,
-            buildQuoteFormCard(route.case_id, asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7), itemCount),
+          if (!event.messageId) throw new Error("ไม่พบ Quote Form message สำหรับเพิ่มรายการ");
+          const currentCount = Math.max(1, Math.min(5, Math.round(asNumber(event.value.item_count, 1))));
+          const nextCount = Math.min(5, currentCount + 1);
+          await this.lark.patchCard(
+            event.messageId,
+            buildQuoteFormCard(
+              route.case_id,
+              asNumber(this.env.QUOTE_DEFAULT_VAT_RATE, 7),
+              nextCount,
+              event.formValue,
+            ),
           );
           break;
         }
