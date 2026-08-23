@@ -1,5 +1,6 @@
 import type { Env } from "../../config/env";
 import { OperationalRepository } from "../../storage/operational.repository";
+import { renderQrPng } from "../../utils/qr-png";
 import { textResponse } from "../../utils/response";
 
 export async function handleQrAsset(request: Request, env: Env, token: string): Promise<Response> {
@@ -8,16 +9,10 @@ export async function handleQrAsset(request: Request, env: Env, token: string): 
   const asset = await new OperationalRepository(env).getQrAsset(token);
   if (!asset) return textResponse("QR expired or not found", 404);
 
-  // `qrcode` is CommonJS. Node may expose `toBuffer` as a synthetic named export,
-  // while the Cloudflare Worker bundle can expose the CommonJS object only under
-  // `default`. Normalize both interop shapes before rendering the PNG.
-  const qrModule = await import("qrcode");
-  const qrEncoder = typeof qrModule.toBuffer === "function" ? qrModule : qrModule.default;
-  if (!qrEncoder || typeof qrEncoder.toBuffer !== "function") {
-    throw new Error("QR encoder does not expose toBuffer in this runtime");
-  }
-  const png = await qrEncoder.toBuffer(asset.promptpay_payload, {
-    type: "png",
+  // Cloudflare Workers resolve qrcode to its browser build, which intentionally
+  // does not expose Node-only toBuffer(). Build from the portable QR matrix and
+  // encode PNG with Web Platform APIs instead.
+  const png = await renderQrPng(asset.promptpay_payload, {
     width: 1024,
     margin: 4,
     errorCorrectionLevel: "M",
