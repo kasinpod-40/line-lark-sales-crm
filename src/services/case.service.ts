@@ -97,11 +97,13 @@ export class CaseService {
     if (!acquired) return;
 
     try {
-      const profile = await getLineUserProfile(this.env, event.user_id).catch((error) => {
+      // These reads are independent of AI/media analysis. Start them together so
+      // the queue consumer does not serialize LINE profile, D1 route lookup and AI.
+      const profilePromise = getLineUserProfile(this.env, event.user_id).catch((error) => {
         console.warn("LINE_PROFILE_FALLBACK", error instanceof Error ? error.message : String(error));
         return null;
       });
-      const customerName = profile?.displayName?.trim() || fallbackName(event.user_id);
+      const activeRoutePromise = this.operational.findActiveCaseByLineUserId(event.user_id);
 
       let ai: AIAnalysisResult;
       let downloadedBytes: ArrayBuffer | null = null;
@@ -134,13 +136,15 @@ export class CaseService {
         ai = await analyzeIncomingText(this.env, messageText(event));
       }
 
+      const [profile, activeRoute] = await Promise.all([profilePromise, activeRoutePromise]);
+      const customerName = profile?.displayName?.trim() || fallbackName(event.user_id);
       const customerId = `line:${event.user_id}`;
       const inboundSnapshot = {
         latest_line_message_id: event.message.id,
         latest_message_text: messageText(event, ai),
         latest_intent: ai.intent,
       };
-      let route = await this.operational.findActiveCaseByLineUserId(event.user_id);
+      let route = activeRoute;
       if (!route) {
         try {
           route = await this.operational.createCase({
