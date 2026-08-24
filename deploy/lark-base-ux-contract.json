@@ -1,0 +1,222 @@
+{
+  "contract_version": "lark_base_golden_ux_v1",
+  "product_release": "0.3.0",
+  "base_contract_version": "lark_base_golden_contract_v1",
+  "table_icons": {
+    "Customers": "👥",
+    "Chat_Tracking": "💬",
+    "Sales_Deals": "💰"
+  },
+  "table_icon_delivery": {
+    "mode": "manual_ui_pass",
+    "reason": "Current supported Lark Base v3 table update and official lark-cli expose table name updates but no table/sidebar icon setter; preserve exact table names."
+  },
+  "prune_extra_views": true,
+  "tables": [
+    {
+      "name": "Customers",
+      "views": [
+        {
+          "name": "👥 ลูกค้าทั้งหมด",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "customer_stage", "lead_quality", "lead_score", "vip_status", "total_spend_thb", "assigned_sales_name", "ai_intent_label", "last_message_at", "updated_at"],
+          "group": {"group_config": [{"field": "customer_stage", "desc": false}]},
+          "sort": {"sort_config": [{"field": "last_message_at", "desc": true}]}
+        },
+        {
+          "name": "🔥 Hot Leads",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "lead_quality", "lead_score", "hot_lead", "ai_intent_label", "ai_guidance", "assigned_sales_name", "last_message_at"],
+          "filter": {"logic": "and", "conditions": [["hot_lead", "==", true]]},
+          "sort": {"sort_config": [{"field": "lead_score", "desc": true}, {"field": "last_message_at", "desc": true}]}
+        },
+        {
+          "name": "💎 ลูกค้า VIP",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "vip_status", "total_spend_thb", "customer_stage", "assigned_sales_name", "last_message_at"],
+          "filter": {"logic": "and", "conditions": [["vip_status", "intersects", ["🥇 Gold VIP", "💎 Diamond VIP"]]]},
+          "sort": {"sort_config": [{"field": "total_spend_thb", "desc": true}]}
+        },
+        {
+          "name": "🏆 Active Customers",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "customer_stage", "vip_status", "total_spend_thb", "assigned_sales_name", "last_message_at"],
+          "filter": {"logic": "and", "conditions": [["customer_stage", "intersects", ["🏆 Active Customer"]]]},
+          "sort": {"sort_config": [{"field": "total_spend_thb", "desc": true}]}
+        },
+        {
+          "name": "🧠 AI Lead Intelligence",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "lead_quality", "lead_score", "hot_lead", "ai_intent", "ai_intent_label", "buyer_intent", "ai_summary", "ai_guidance", "assigned_sales_name", "last_message_at"],
+          "sort": {"sort_config": [{"field": "lead_score", "desc": true}, {"field": "last_message_at", "desc": true}]}
+        },
+        {
+          "name": "🧑‍💼 ลูกค้าตาม Sales",
+          "type": "grid",
+          "visible_fields": ["customer_id", "display_name", "assigned_sales_name", "customer_stage", "lead_quality", "total_spend_thb", "last_message_at"],
+          "group": {"group_config": [{"field": "assigned_sales_name", "desc": false}]},
+          "sort": {"sort_config": [{"field": "total_spend_thb", "desc": true}]}
+        },
+        {
+          "name": "🪜 Customer Journey",
+          "type": "kanban",
+          "visible_fields": ["customer_id", "display_name", "customer_stage", "lead_quality", "vip_status", "assigned_sales_name", "last_message_at"],
+          "group": {"group_config": [{"field": "customer_stage", "desc": false}]},
+          "sort": {"sort_config": [{"field": "last_message_at", "desc": true}]}
+        }
+      ]
+    },
+    {
+      "name": "Chat_Tracking",
+      "views": [
+        {
+          "name": "💬 Case & Chat Timeline",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "record_type", "case_id", "customer", "customer_id", "case_status", "assigned_sales", "lead_quality", "customer_msg_time", "sales_reply_time", "sla_minutes", "sla_status", "message_type", "message_text", "event_at", "updated_at"],
+          "sort": {"sort_config": [{"field": "event_at", "desc": true}, {"field": "updated_at", "desc": true}]}
+        },
+        {
+          "name": "⚡ SLA Monitor",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "case_id", "customer", "assigned_sales", "customer_msg_time", "sales_reply_time", "first_response_seconds", "sla_minutes", "sla_status", "case_status", "updated_at"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]]]},
+          "group": {"group_config": [{"field": "sla_status", "desc": false}]},
+          "sort": {"sort_config": [{"field": "first_response_seconds", "desc": true}]}
+        },
+        {
+          "name": "🚨 SLA เกิน 5 นาที",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "case_id", "customer", "assigned_sales", "customer_msg_time", "sales_reply_time", "first_response_seconds", "sla_status", "case_status", "updated_at"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]], ["first_response_seconds", ">", 300]]},
+          "sort": {"sort_config": [{"field": "first_response_seconds", "desc": true}]}
+        },
+        {
+          "name": "🟢 SLA Fast",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "case_id", "customer", "assigned_sales", "customer_msg_time", "sales_reply_time", "first_response_seconds", "sla_status", "case_status", "updated_at"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]], ["first_response_seconds", "non_empty"], ["first_response_seconds", "<=", 300]]},
+          "sort": {"sort_config": [{"field": "first_response_seconds", "desc": false}]}
+        },
+        {
+          "name": "🤝 แยกตาม Sales",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "record_type", "case_id", "customer", "assigned_sales", "case_status", "lead_quality", "first_response_seconds", "resolution_seconds", "updated_at"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]]]},
+          "group": {"group_config": [{"field": "assigned_sales", "desc": false}]},
+          "sort": {"sort_config": [{"field": "updated_at", "desc": true}]}
+        },
+        {
+          "name": "🧭 Case Lifecycle",
+          "type": "kanban",
+          "visible_fields": ["tracking_id", "case_id", "customer", "case_status", "assigned_sales", "lead_quality", "opened_at", "first_response_at", "closed_at"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]]]},
+          "group": {"group_config": [{"field": "case_status", "desc": false}]},
+          "sort": {"sort_config": [{"field": "updated_at", "desc": true}]}
+        },
+        {
+          "name": "📦 Media & Files",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "case_id", "customer", "direction", "message_type", "message_id", "message_text", "event_at", "assigned_sales"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["MESSAGE"]], ["message_type", "!=", "text"]]},
+          "sort": {"sort_config": [{"field": "event_at", "desc": true}]}
+        },
+        {
+          "name": "✅ Resolved Cases",
+          "type": "grid",
+          "visible_fields": ["tracking_id", "case_id", "customer", "assigned_sales", "opened_at", "first_response_at", "first_response_seconds", "closed_at", "resolution_seconds", "sla_status"],
+          "filter": {"logic": "and", "conditions": [["record_type", "intersects", ["CASE"]], ["case_status", "intersects", ["RESOLVED"]]]},
+          "sort": {"sort_config": [{"field": "closed_at", "desc": true}]}
+        }
+      ]
+    },
+    {
+      "name": "Sales_Deals",
+      "views": [
+        {
+          "name": "💰 Deals Overview",
+          "type": "grid",
+          "visible_fields": ["deal_id", "case_id", "customer", "customer_id", "deal_value_thb", "sales_rep", "deal_status", "pipeline_stage", "quotation_no", "payment_status", "closed_at", "updated_at"],
+          "group": {"group_config": [{"field": "pipeline_stage", "desc": false}]},
+          "sort": {"sort_config": [{"field": "updated_at", "desc": true}]}
+        },
+        {
+          "name": "🏆 Closed Won",
+          "type": "grid",
+          "visible_fields": ["deal_id", "customer", "customer_id", "deal_value_thb", "closed_won_value_thb", "sales_rep", "deal_status", "pipeline_stage", "payment_status", "closed_at"],
+          "filter": {"logic": "and", "conditions": [["deal_status", "intersects", ["Closed Won 🏆"]]]},
+          "sort": {"sort_config": [{"field": "closed_at", "desc": true}, {"field": "deal_value_thb", "desc": true}]}
+        },
+        {
+          "name": "📈 Sales Pipeline",
+          "type": "kanban",
+          "visible_fields": ["deal_id", "customer", "deal_value_thb", "sales_rep", "deal_status", "pipeline_stage", "quotation_status", "payment_status", "updated_at"],
+          "group": {"group_config": [{"field": "pipeline_stage", "desc": false}]},
+          "sort": {"sort_config": [{"field": "deal_value_thb", "desc": true}]}
+        },
+        {
+          "name": "🧾 Quotations",
+          "type": "grid",
+          "visible_fields": ["deal_id", "customer", "quotation_no", "quotation_status", "subtotal", "discount", "vat_rate", "vat_amount", "shipping_fee", "total_amount", "quotation_valid_until", "quotation_sent_at", "sales_rep"],
+          "filter": {"logic": "and", "conditions": [["quotation_no", "non_empty"]]},
+          "sort": {"sort_config": [{"field": "quotation_sent_at", "desc": true}]}
+        },
+        {
+          "name": "💳 Payment Control",
+          "type": "grid",
+          "visible_fields": ["deal_id", "customer", "total_amount", "payment_amount", "payment_status", "qr_sent_at", "deal_status", "sales_rep", "updated_at"],
+          "group": {"group_config": [{"field": "payment_status", "desc": false}]},
+          "sort": {"sort_config": [{"field": "updated_at", "desc": true}]}
+        },
+        {
+          "name": "👑 Sales Leaderboard",
+          "type": "grid",
+          "visible_fields": ["deal_id", "customer", "closed_won_value_thb", "sales_rep", "deal_status", "closed_at"],
+          "filter": {"logic": "and", "conditions": [["deal_status", "intersects", ["Closed Won 🏆"]]]},
+          "group": {"group_config": [{"field": "sales_rep", "desc": false}]},
+          "sort": {"sort_config": [{"field": "closed_won_value_thb", "desc": true}]}
+        },
+        {
+          "name": "📅 Closing Timeline",
+          "type": "grid",
+          "visible_fields": ["deal_id", "customer", "deal_value_thb", "sales_rep", "deal_status", "pipeline_stage", "payment_status", "created_at", "closed_at"],
+          "sort": {"sort_config": [{"field": "closed_at", "desc": true}, {"field": "created_at", "desc": true}]}
+        }
+      ]
+    }
+  ],
+  "dashboards": [
+    {
+      "name": "🚀 Executive CRM Command Center",
+      "blocks": [
+        {"name": "✨ Executive Overview", "type": "text", "data_config": {"text": "# 🚀 LINE OA Sales CRM — Executive Command Center\n**Revenue • Pipeline • Customers • Lead Intelligence**"}, "position": {"x": 0, "y": 0, "w": 12, "h": 2}},
+        {"name": "💰 Total Revenue", "type": "statistics", "data_config": {"table_name": "Sales_Deals", "series": [{"field_name": "closed_won_value_thb", "rollup": "SUM"}]}, "position": {"x": 0, "y": 2, "w": 3, "h": 3}},
+        {"name": "🏆 Closed Won Deals", "type": "statistics", "data_config": {"table_name": "Sales_Deals", "count_all": true, "filter": {"conjunction": "and", "conditions": [{"field_name": "deal_status", "operator": "is", "value": "Closed Won 🏆"}]}}, "position": {"x": 3, "y": 2, "w": 3, "h": 3}},
+        {"name": "🧮 Avg Won Deal", "type": "statistics", "data_config": {"table_name": "Sales_Deals", "series": [{"field_name": "deal_value_thb", "rollup": "AVERAGE"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "deal_status", "operator": "is", "value": "Closed Won 🏆"}]}}, "position": {"x": 6, "y": 2, "w": 3, "h": 3}},
+        {"name": "👥 Active Customers", "type": "statistics", "data_config": {"table_name": "Customers", "count_all": true, "filter": {"conjunction": "and", "conditions": [{"field_name": "customer_stage", "operator": "is", "value": "🏆 Active Customer"}]}}, "position": {"x": 9, "y": 2, "w": 3, "h": 3}},
+        {"name": "💎 VIP Customers", "type": "statistics", "data_config": {"table_name": "Customers", "count_all": true, "filter": {"conjunction": "or", "conditions": [{"field_name": "vip_status", "operator": "is", "value": "🥇 Gold VIP"}, {"field_name": "vip_status", "operator": "is", "value": "💎 Diamond VIP"}]}}, "position": {"x": 0, "y": 5, "w": 3, "h": 3}},
+        {"name": "🔥 Hot Leads", "type": "statistics", "data_config": {"table_name": "Customers", "count_all": true, "filter": {"conjunction": "and", "conditions": [{"field_name": "hot_lead", "operator": "is", "value": true}]}}, "position": {"x": 3, "y": 5, "w": 3, "h": 3}},
+        {"name": "👑 Revenue by Sales", "type": "bar", "data_config": {"table_name": "Sales_Deals", "series": [{"field_name": "closed_won_value_thb", "rollup": "SUM"}], "group_by": [{"field_name": "sales_rep", "mode": "integrated", "sort": {"type": "value", "order": "desc"}}], "filter": {"conjunction": "and", "conditions": [{"field_name": "deal_status", "operator": "is", "value": "Closed Won 🏆"}]}}, "position": {"x": 6, "y": 5, "w": 6, "h": 5}},
+        {"name": "📈 Pipeline Distribution", "type": "ring", "data_config": {"table_name": "Sales_Deals", "count_all": true, "group_by": [{"field_name": "pipeline_stage", "mode": "integrated"}]}, "position": {"x": 0, "y": 8, "w": 6, "h": 5}},
+        {"name": "🪜 Customer Stage Mix", "type": "pie", "data_config": {"table_name": "Customers", "count_all": true, "group_by": [{"field_name": "customer_stage", "mode": "integrated"}]}, "position": {"x": 0, "y": 13, "w": 6, "h": 5}},
+        {"name": "🧠 Lead Quality Mix", "type": "ring", "data_config": {"table_name": "Customers", "count_all": true, "group_by": [{"field_name": "lead_quality", "mode": "integrated"}]}, "position": {"x": 6, "y": 10, "w": 6, "h": 5}},
+        {"name": "📅 Revenue Trend", "type": "line", "data_config": {"table_name": "Sales_Deals", "series": [{"field_name": "closed_won_value_thb", "rollup": "SUM"}], "group_by": [{"field_name": "closed_at", "mode": "integrated", "sort": {"type": "group", "order": "asc"}}], "filter": {"conjunction": "and", "conditions": [{"field_name": "deal_status", "operator": "is", "value": "Closed Won 🏆"}]}}, "position": {"x": 6, "y": 15, "w": 6, "h": 5}}
+      ]
+    },
+    {
+      "name": "⚡ Sales Ops & SLA Control Room",
+      "blocks": [
+        {"name": "⚡ Sales Operations", "type": "text", "data_config": {"text": "# ⚡ Sales Ops & SLA Control Room\n**Cases • Response SLA • Workload • Conversation Operations**"}, "position": {"x": 0, "y": 0, "w": 12, "h": 2}},
+        {"name": "📂 Open Cases", "type": "statistics", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}, {"field_name": "case_status", "operator": "isNot", "value": "RESOLVED"}]}}, "position": {"x": 0, "y": 2, "w": 3, "h": 3}},
+        {"name": "✅ Resolved Cases", "type": "statistics", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}, {"field_name": "case_status", "operator": "is", "value": "RESOLVED"}]}}, "position": {"x": 3, "y": 2, "w": 3, "h": 3}},
+        {"name": "⏱ Avg First Response (sec)", "type": "statistics", "data_config": {"table_name": "Chat_Tracking", "series": [{"field_name": "first_response_seconds", "rollup": "AVERAGE"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}, {"field_name": "first_response_seconds", "operator": "isNotEmpty"}]}}, "position": {"x": 6, "y": 2, "w": 3, "h": 3}},
+        {"name": "🕒 Avg Resolution (sec)", "type": "statistics", "data_config": {"table_name": "Chat_Tracking", "series": [{"field_name": "resolution_seconds", "rollup": "AVERAGE"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}, {"field_name": "resolution_seconds", "operator": "isNotEmpty"}]}}, "position": {"x": 9, "y": 2, "w": 3, "h": 3}},
+        {"name": "🧭 Case Lifecycle", "type": "bar", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "case_status", "mode": "integrated"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}]}}, "position": {"x": 0, "y": 5, "w": 6, "h": 5}},
+        {"name": "⚡ SLA Distribution", "type": "pie", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "sla_status", "mode": "integrated"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}]}}, "position": {"x": 6, "y": 5, "w": 6, "h": 5}},
+        {"name": "🤝 Case Workload by Sales", "type": "bar", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "assigned_sales", "mode": "integrated", "sort": {"type": "value", "order": "desc"}}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}]}}, "position": {"x": 0, "y": 10, "w": 6, "h": 5}},
+        {"name": "💬 Message Types", "type": "pie", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "message_type", "mode": "integrated"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "MESSAGE"}]}}, "position": {"x": 6, "y": 10, "w": 6, "h": 5}},
+        {"name": "↔️ Inbound vs Outbound", "type": "ring", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "direction", "mode": "integrated"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "MESSAGE"}]}}, "position": {"x": 0, "y": 15, "w": 6, "h": 5}},
+        {"name": "🔥 Case Lead Quality", "type": "bar", "data_config": {"table_name": "Chat_Tracking", "count_all": true, "group_by": [{"field_name": "lead_quality", "mode": "integrated"}], "filter": {"conjunction": "and", "conditions": [{"field_name": "record_type", "operator": "is", "value": "CASE"}]}}, "position": {"x": 6, "y": 15, "w": 6, "h": 5}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,222 @@
+{
+  "contract_version": "lark_base_golden_contract_v1",
+  "product_release": "0.3.0",
+  "base_name": "LINE OA Sales CRM",
+  "time_zone": "Asia/Bangkok",
+  "identity": "user",
+  "tables": [
+    {
+      "name": "Customers",
+      "primary_field": "customer_id",
+      "fields": [
+        { "type": "text", "name": "customer_id" },
+        { "type": "text", "name": "line_user_id" },
+        { "type": "text", "name": "display_name" },
+        { "type": "text", "name": "picture_url" },
+        {
+          "type": "select",
+          "name": "customer_stage",
+          "multiple": false,
+          "options": [
+            { "name": "🌱 New Lead" },
+            { "name": "💬 Contacted" },
+            { "name": "📄 Quotation Sent" },
+            { "name": "💳 Payment Pending" },
+            { "name": "🏆 Active Customer" },
+            { "name": "💤 Inactive" }
+          ]
+        },
+        {
+          "type": "select",
+          "name": "vip_status",
+          "multiple": false,
+          "options": [
+            { "name": "Standard" },
+            { "name": "🥇 Gold VIP" },
+            { "name": "💎 Diamond VIP" }
+          ]
+        },
+        { "type": "text", "name": "assigned_sales_id" },
+        { "type": "text", "name": "assigned_sales_name" },
+        { "type": "user", "name": "sales", "multiple": false },
+        { "type": "text", "name": "ai_intent" },
+        { "type": "text", "name": "ai_intent_label" },
+        { "type": "text", "name": "buyer_intent" },
+        {
+          "type": "select",
+          "name": "lead_quality",
+          "multiple": false,
+          "options": [
+            { "name": "🔥 Hot Lead" },
+            { "name": "⚡ High Intent" },
+            { "name": "🌱 New Lead" }
+          ]
+        },
+        { "type": "number", "name": "lead_score", "style": { "type": "plain", "precision": 0 } },
+        { "type": "checkbox", "name": "hot_lead" },
+        { "type": "text", "name": "ai_summary" },
+        { "type": "text", "name": "ai_guidance" },
+        { "type": "datetime", "name": "last_message_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "created_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "updated_at", "style": { "format": "yyyy-MM-dd HH:mm" } }
+      ],
+      "generated_backlinks": ["chat_history", "deals"],
+      "deferred_fields": [
+        {
+          "type": "formula",
+          "name": "total_spend_thb",
+          "expression": "[Sales_Deals].FILTER(CurrentValue.[customer_id] = [customer_id]).[closed_won_value_thb].LISTCOMBINE().SUM()"
+        }
+      ]
+    },
+    {
+      "name": "Chat_Tracking",
+      "primary_field": "tracking_id",
+      "fields": [
+        { "type": "text", "name": "tracking_id" },
+        {
+          "type": "select",
+          "name": "record_type",
+          "multiple": false,
+          "options": [{ "name": "CASE" }, { "name": "MESSAGE" }]
+        },
+        { "type": "text", "name": "case_id" },
+        {
+          "type": "link",
+          "name": "customer",
+          "link_table": "Customers",
+          "bidirectional": true,
+          "bidirectional_link_field_name": "chat_history"
+        },
+        { "type": "text", "name": "customer_id" },
+        { "type": "datetime", "name": "customer_msg_time", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "sales_reply_time", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "text", "name": "assigned_sales" },
+        { "type": "text", "name": "assigned_sales_id" },
+        { "type": "user", "name": "sales", "multiple": false },
+        { "type": "text", "name": "ai_intent" },
+        { "type": "text", "name": "lead_quality" },
+        {
+          "type": "select",
+          "name": "channel",
+          "multiple": false,
+          "options": [{ "name": "🟢 LINE Official Account" }]
+        },
+        {
+          "type": "select",
+          "name": "direction",
+          "multiple": false,
+          "options": [{ "name": "customer_to_sales" }, { "name": "sales_to_customer" }]
+        },
+        { "type": "text", "name": "message_type" },
+        { "type": "text", "name": "message_id" },
+        { "type": "text", "name": "message_text" },
+        { "type": "datetime", "name": "event_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "text", "name": "lark_root_message_id" },
+        { "type": "text", "name": "lark_thread_id" },
+        {
+          "type": "select",
+          "name": "case_status",
+          "multiple": false,
+          "options": [
+            { "name": "NEW" },
+            { "name": "CLAIMED" },
+            { "name": "IN_PROGRESS" },
+            { "name": "QUOTED" },
+            { "name": "PAYMENT" },
+            { "name": "WON" },
+            { "name": "RESOLVED" }
+          ]
+        },
+        { "type": "datetime", "name": "opened_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "claimed_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "number", "name": "claim_seconds", "style": { "type": "plain", "precision": 0 } },
+        { "type": "datetime", "name": "first_response_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "number", "name": "first_response_seconds", "style": { "type": "plain", "precision": 0 } },
+        { "type": "datetime", "name": "closed_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "number", "name": "resolution_seconds", "style": { "type": "plain", "precision": 0 } },
+        { "type": "datetime", "name": "updated_at", "style": { "format": "yyyy-MM-dd HH:mm" } }
+      ],
+      "deferred_fields": [
+        {
+          "type": "formula",
+          "name": "sla_minutes",
+          "expression": "IF(ISBLANK([sales_reply_time]), \"\", ROUND([first_response_seconds] / 60, 1))"
+        },
+        {
+          "type": "formula",
+          "name": "sla_status",
+          "expression": "IF(ISBLANK([sales_reply_time]), \"\", IF([first_response_seconds] <= 300, \"🟢 Fast (<5m)\", \"🔴 Overdue SLA\"))"
+        }
+      ]
+    },
+    {
+      "name": "Sales_Deals",
+      "primary_field": "deal_id",
+      "fields": [
+        { "type": "text", "name": "deal_id" },
+        { "type": "text", "name": "case_id" },
+        {
+          "type": "link",
+          "name": "customer",
+          "link_table": "Customers",
+          "bidirectional": true,
+          "bidirectional_link_field_name": "deals"
+        },
+        { "type": "text", "name": "customer_id" },
+        { "type": "number", "name": "deal_value_thb", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "text", "name": "sales_id" },
+        { "type": "text", "name": "sales_rep" },
+        { "type": "user", "name": "sales", "multiple": false },
+        {
+          "type": "select",
+          "name": "deal_status",
+          "multiple": false,
+          "options": [{ "name": "Open" }, { "name": "Closed Won 🏆" }, { "name": "Closed Lost" }]
+        },
+        {
+          "type": "select",
+          "name": "pipeline_stage",
+          "multiple": false,
+          "options": [{ "name": "Lead" }, { "name": "Quotation" }, { "name": "Payment Pending" }, { "name": "Payment Received" }, { "name": "Closed Won" }]
+        },
+        { "type": "text", "name": "quotation_no" },
+        { "type": "text", "name": "quotation_status" },
+        { "type": "text", "name": "quotation_items_json" },
+        { "type": "number", "name": "subtotal", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "number", "name": "discount", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "number", "name": "vat_rate", "style": { "type": "plain", "precision": 2 } },
+        { "type": "number", "name": "vat_amount", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "number", "name": "shipping_fee", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "number", "name": "total_amount", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        { "type": "text", "name": "quotation_note" },
+        { "type": "text", "name": "quotation_valid_until" },
+        { "type": "datetime", "name": "quotation_sent_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "number", "name": "payment_amount", "style": { "type": "currency", "precision": 2, "currency_code": "THB" } },
+        {
+          "type": "select",
+          "name": "payment_status",
+          "multiple": false,
+          "options": [{ "name": "Pending" }, { "name": "Pending QR Send" }, { "name": "QR Sent" }, { "name": "Paid" }]
+        },
+        { "type": "datetime", "name": "qr_sent_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "closed_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "created_at", "style": { "format": "yyyy-MM-dd HH:mm" } },
+        { "type": "datetime", "name": "updated_at", "style": { "format": "yyyy-MM-dd HH:mm" } }
+      ],
+      "deferred_fields": [
+        {
+          "type": "formula",
+          "name": "closed_won_value_thb",
+          "expression": "IF([deal_status] = \"Closed Won 🏆\", [deal_value_thb], 0)"
+        }
+      ]
+    }
+  ],
+  "deferred_field_order": [
+    "Chat_Tracking.sla_minutes",
+    "Chat_Tracking.sla_status",
+    "Sales_Deals.closed_won_value_thb",
+    "Customers.total_spend_thb"
+  ]
+}

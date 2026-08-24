@@ -1,0 +1,31 @@
+{
+  "name": "line-lark-sales-crm",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf .tmp-test && tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('.tmp-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test test/*.test.cjs",
+    "bundle": "wrangler deploy --dry-run --config wrangler.ci.jsonc",
+    "check": "npm run typecheck && npm test && npm run bundle",
+    "lark:base:plan": "node scripts/provision-lark-base.mjs",
+    "lark:base:apply": "node scripts/provision-lark-base.mjs --apply",
+    "lark:base:ux:plan": "node scripts/provision-lark-base-ux.mjs",
+    "lark:base:ux:apply": "node scripts/provision-lark-base-ux.mjs --apply",
+    "lark:base:ux:visible-ui": "node scripts/lark-base-visible-fields-ui-server.mjs",
+    "lark:base:reporting:plan": "node scripts/reconcile-lark-base-reporting.mjs",
+    "lark:base:reporting:apply": "node scripts/reconcile-lark-base-reporting.mjs --apply",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-types": "wrangler types"
+  },
+  "dependencies": {
+    "@lark-base-open/js-sdk": "1.0.2",
+    "@larksuiteoapi/node-sdk": "^1.72.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "line-lark-sales-crm",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "LARK_SALES_INBOX_CHAT_ID": "oc_xxx",
+    "LARK_BASE_APP_TOKEN": "bascn_xxx",
+    "LARK_BASE_CUSTOMERS_TABLE_ID": "tbl_xxx",
+    "LARK_BASE_CHAT_TRACKING_TABLE_ID": "tbl_xxx",
+    "LARK_BASE_SALES_DEALS_TABLE_ID": "tbl_xxx",
+    "PROMPTPAY_TARGET_TYPE": "phone",
+    "PUBLIC_BASE_URL": "https://your-worker.example.workers.dev",
+    "COMPANY_NAME": "Your Company",
+    "QUOTE_DEFAULT_VAT_RATE": "7",
+    "QR_TTL_SECONDS": "604800",
+    "MEDIA_TTL_SECONDS": "604800",
+    "VIP_GOLD_MIN_THB": "",
+    "VIP_DIAMOND_MIN_THB": "",
+    "AI_TEXT_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
+    "GEMINI_IMAGE_MODEL": "gemini-3.6-flash"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "line-lark-sales-crm", "database_id": "REPLACE_D1_ID" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "LINE_EVENTS_QUEUE", "queue": "line-lark-sales-crm-events" }
+    ],
+    "consumers": [
+      {
+        "queue": "line-lark-sales-crm-events",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "line-lark-sales-crm-events-dlq",
+        "max_concurrency": 5
+      }
+    ]
+  },
+  "ai": { "binding": "AI" }
+}

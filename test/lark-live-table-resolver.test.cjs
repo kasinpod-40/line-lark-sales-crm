@@ -1,0 +1,82 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+const root = path.resolve(__dirname, '..');
+
+async function helper() {
+  return await import(pathToFileURL(path.join(root, 'scripts/lark-cli-resource-list.mjs')).href);
+}
+
+test('canonical table resolver maps emoji-prefixed golden Base names to exact live IDs', async () => {
+  const { resourceMapFromList, resolveCanonicalNamedResource } = await helper();
+  const map = resourceMapFromList({
+    tables: [
+      { table_id: 'tblCustomers', name: '👥 Customers' },
+      { table_id: 'tblChat', name: '💬 Chat_Tracking' },
+      { table_id: 'tblDeals', name: '💰 Sales_Deals' },
+    ],
+  }, {
+    collectionKeys: ['tables', 'items'],
+    nameKeys: ['name', 'table_name'],
+    idKeys: ['id', 'table_id'],
+    label: 'table',
+  });
+
+  assert.deepEqual(resolveCanonicalNamedResource(map, 'Customers', 'table'), {
+    displayName: '👥 Customers', id: 'tblCustomers', raw: { table_id: 'tblCustomers', name: '👥 Customers' },
+  });
+  assert.equal(resolveCanonicalNamedResource(map, 'Chat_Tracking', 'table').id, 'tblChat');
+  assert.equal(resolveCanonicalNamedResource(map, 'Sales_Deals', 'table').id, 'tblDeals');
+});
+
+test('canonical table resolver accepts exact schema names and fails closed on ambiguous suffixes', async () => {
+  const { resolveCanonicalNamedResource } = await helper();
+  assert.equal(resolveCanonicalNamedResource(new Map([
+    ['Customers', { id: 'tblExact', raw: {} }],
+  ]), 'Customers', 'table').id, 'tblExact');
+
+  assert.throws(() => resolveCanonicalNamedResource(new Map([
+    ['👥 Customers', { id: 'tblA', raw: {} }],
+    ['Archive Customers', { id: 'tblB', raw: {} }],
+  ]), 'Customers', 'table'), /Could not uniquely resolve table Customers; matches=2/);
+});
+
+test('lifecycle reconcile and QR recovery operators use resolved concrete table IDs', () => {
+  const reconcile = fs.readFileSync(path.join(root, 'scripts/reconcile-lark-base-lifecycle-options.mjs'), 'utf8');
+  const recovery = fs.readFileSync(path.join(root, 'scripts/recover-failed-qr-case.mjs'), 'utf8');
+
+  for (const source of [reconcile, recovery]) {
+    assert.match(source, /resolveCanonicalNamedResource/);
+    assert.match(source, /\+table-list/);
+  }
+
+  assert.match(reconcile, /live_table_resolution: "exact_id_from_table_list"/);
+  assert.match(reconcile, /"--table-id", table\.id/);
+  assert.match(reconcile, /"--field-id", field\.id/);
+  assert.doesNotMatch(reconcile, /"--table-id", target\.table/);
+
+  assert.match(recovery, /record_resolution: "d1_exact_record_ids_plus_local_ndjson_readback"/);
+  assert.match(recovery, /"--table-id", table\.id/);
+  assert.match(recovery, /customer_record_id/);
+  assert.match(recovery, /tracking_record_id/);
+  assert.match(recovery, /deal_record_id/);
+  assert.match(recovery, /--output/);
+  assert.match(recovery, /--minimal-stdout/);
+  assert.doesNotMatch(recovery, /--filter-json/);
+  assert.doesNotMatch(recovery, /listByFilter\(args\.baseToken, "Customers"/);
+  assert.doesNotMatch(recovery, /batchUpdate\(args\.baseToken, "Sales_Deals"/);
+});
+
+test('QR recovery prefers an explicit D1 UUID for every read, write, and readback', () => {
+  const recovery = fs.readFileSync(path.join(root, 'scripts/recover-failed-qr-case.mjs'), 'utf8');
+  assert.match(recovery, /--database-id/);
+  assert.match(recovery, /databaseRef = args\.databaseId \|\| args\.database/);
+  assert.match(recovery, /d1_resolution: d1Resolution/);
+  assert.match(recovery, /"exact_database_uuid"/);
+  assert.match(recovery, /d1Route\(databaseRef, args\.caseId\)/);
+  assert.match(recovery, /wranglerD1Json\(\s*databaseRef,/s);
+  assert.doesNotMatch(recovery, /752d602c-7d18-4354-9c2f-ac7b8178ba16/);
+});
